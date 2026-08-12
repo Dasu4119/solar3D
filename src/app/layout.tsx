@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { QueryProvider } from "@/shared/providers/query-provider";
 
 export const metadata: Metadata = {
   title: "Solar3D",
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><QueryProvider>{children}</QueryProvider></body>
     </html>
   );
 }
