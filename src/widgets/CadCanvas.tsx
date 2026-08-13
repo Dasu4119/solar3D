@@ -3,32 +3,36 @@
 import { useEffect, useRef, useState } from "react";
 import { screenToWorld, zoomAt, type Viewport } from "@/engine/cad/canvas";
 import { snapPointToGrid, type GridConfig } from "@/engine/cad/grid";
+import { nearestVertex } from "@/engine/cad/selection";
+import type { CadTool } from "@/engine/cad/tools";
+import { moveVertex } from "@/engine/cad/roof";
 import type { Point } from "@/engine/geometry/point";
 
 interface CadCanvasProps {
   roof?: Point[];
+  tool?: CadTool;
   onRoofChange?: (points: Point[]) => void;
 }
 
 const initialViewport: Viewport = { zoom: 1, panX: 0, panY: 0 };
 const grid: GridConfig = { size: 10, enabled: true };
+const HIT_TOLERANCE = 10;
 
-export function CadCanvas({ roof = [], onRoofChange }: CadCanvasProps) {
+export function CadCanvas({ roof = [], tool = "roof", onRoofChange }: CadCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [viewport, setViewport] = useState(initialViewport);
   const [draft, setDraft] = useState<Point[]>(roof);
-  const [dragging, setDragging] = useState(false);
+  const [panActive, setPanActive] = useState(false);
+  const [selectedVertex, setSelectedVertex] = useState(-1);
+  const dragVertex = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
 
-  useEffect(() => {
-    setDraft(roof);
-  }, [roof]);
+  useEffect(() => setDraft(roof), [roof]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const parent = canvas.parentElement;
-    if (!parent) return;
+    const parent = canvas?.parentElement;
+    if (!canvas || !parent) return;
     const dpr = window.devicePixelRatio || 1;
     const width = parent.clientWidth;
     const height = parent.clientHeight;
@@ -67,15 +71,19 @@ export function CadCanvas({ roof = [], onRoofChange }: CadCanvasProps) {
       ctx.strokeStyle = "#0f766e";
       ctx.lineWidth = 2 / viewport.zoom;
       ctx.stroke();
-      ctx.fillStyle = "rgba(15, 118, 110, 0.10)";
-      if (draft.length > 2) ctx.fill();
-      draft.forEach((p) => {
-        ctx.beginPath(); ctx.arc(p.x, p.y, 4 / viewport.zoom, 0, Math.PI * 2);
-        ctx.fillStyle = "#0f766e"; ctx.fill();
+      if (draft.length > 2) {
+        ctx.fillStyle = "rgba(15, 118, 110, 0.10)";
+        ctx.fill();
+      }
+      draft.forEach((p, index) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, (index === selectedVertex ? 6 : 4) / viewport.zoom, 0, Math.PI * 2);
+        ctx.fillStyle = index === selectedVertex ? "#b45309" : "#0f766e";
+        ctx.fill();
       });
     }
     ctx.restore();
-  }, [draft, viewport]);
+  }, [draft, selectedVertex, viewport]);
 
   function pointerPosition(e: React.PointerEvent<HTMLCanvasElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -83,25 +91,50 @@ export function CadCanvas({ roof = [], onRoofChange }: CadCanvasProps) {
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (e.button === 1 || e.shiftKey) {
-      setDragging(true);
+    const point = pointerPosition(e);
+    const shouldPan = tool === "pan" || e.button === 1 || e.shiftKey;
+    if (shouldPan) {
+      setPanActive(true);
       lastPointer.current = { x: e.clientX, y: e.clientY };
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
     if (e.button !== 0) return;
+
+    if (tool === "select") {
+      const index = nearestVertex(draft, point, HIT_TOLERANCE / viewport.zoom);
+      setSelectedVertex(index);
+      dragVertex.current = index >= 0;
+      if (dragVertex.current) e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    if (tool === "roof") {
+      const next = [...draft, snapPointToGrid(point, grid)];
+      setDraft(next);
+      onRoofChange?.(next);
+    }
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (panActive) {
+      const dx = e.clientX - lastPointer.current.x;
+      const dy = e.clientY - lastPointer.current.y;
+      lastPointer.current = { x: e.clientX, y: e.clientY };
+      setViewport((v) => ({ ...v, panX: v.panX + dx, panY: v.panY + dy }));
+      return;
+    }
+    if (!dragVertex.current || selectedVertex < 0 || tool !== "select") return;
     const point = snapPointToGrid(pointerPosition(e), grid);
-    const next = [...draft, point];
+    const next = moveVertex(draft, selectedVertex, point);
     setDraft(next);
     onRoofChange?.(next);
   }
 
-  function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!dragging) return;
-    const dx = e.clientX - lastPointer.current.x;
-    const dy = e.clientY - lastPointer.current.y;
-    lastPointer.current = { x: e.clientX, y: e.clientY };
-    setViewport((v) => ({ ...v, panX: v.panX + dx, panY: v.panY + dy }));
+  function handlePointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    setPanActive(false);
+    dragVertex.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   }
 
   function handleWheel(e: React.WheelEvent<HTMLCanvasElement>) {
@@ -111,5 +144,5 @@ export function CadCanvas({ roof = [], onRoofChange }: CadCanvasProps) {
     setViewport((v) => zoomAt(v, e.deltaY > 0 ? 0.9 : 1.1, anchor));
   }
 
-  return <canvas ref={canvasRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={() => setDragging(false)} onWheel={handleWheel} style={{ width: "100%", height: "100%", display: "block", cursor: dragging ? "grabbing" : "crosshair", touchAction: "none" }} aria-label="Solar CAD canvas" />;
+  return <canvas ref={canvasRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onWheel={handleWheel} style={{ width: "100%", height: "100%", display: "block", cursor: panActive ? "grabbing" : tool === "select" ? "default" : "crosshair", touchAction: "none" }} aria-label="Solar CAD canvas" />;
 }
