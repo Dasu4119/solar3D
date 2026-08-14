@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { screenToWorld, zoomAt, type Viewport } from "@/engine/cad/canvas";
 import { snapPointToGrid, type GridConfig } from "@/engine/cad/grid";
 import { nearestVertex } from "@/engine/cad/selection";
+import { polygonArea } from "@/engine/cad/measure";
 import type { CadTool } from "@/engine/cad/tools";
 import { moveVertex } from "@/engine/cad/roof";
 import type { Point } from "@/engine/geometry/point";
@@ -144,5 +145,16 @@ export function CadCanvas({ roof = [], tool = "roof", onRoofChange }: CadCanvasP
     setViewport((v) => zoomAt(v, e.deltaY > 0 ? 0.9 : 1.1, anchor));
   }
 
-  return <canvas ref={canvasRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onWheel={handleWheel} style={{ width: "100%", height: "100%", display: "block", cursor: panActive ? "grabbing" : tool === "select" ? "default" : "crosshair", touchAction: "none" }} aria-label="Solar CAD canvas" />;
+  const area = polygonArea(draft);
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <canvas ref={canvasRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onWheel={handleWheel} style={{ width: "100%", height: "100%", display: "block", cursor: panActive ? "grabbing" : tool === "select" ? "default" : "crosshair", touchAction: "none" }} aria-label="Solar CAD canvas" />
+      {draft.length >= 3 && (
+        <div style={{ position: "absolute", top: 12, right: 12, padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.92)", border: "1px solid #e5e7eb", fontSize: 12 }}>
+          Roof area: <strong>{area.toFixed(2)} m²</strong>
+        </div>
+      )}
+    </div>
+  );
 }
