@@ -15,45 +15,30 @@ const tools: { id: DesignTool; label: string; hint: string }[] = [
   { id: "measure", label: "Measure", hint: "M" },
 ];
 
-const PANEL: SolarPanelSpec = {
-  id: "default-400w",
-  manufacturer: "Solar3D",
-  model: "400W Reference",
-  widthM: 1.134,
-  lengthM: 1.722,
-  powerWatts: 400,
-  efficiency: 0.205,
-};
-
+const PANEL: SolarPanelSpec = { id: "default-400w", manufacturer: "Solar3D", model: "400W Reference", widthM: 1.134, lengthM: 1.722, powerWatts: 400, efficiency: 0.205 };
 const SCALE = 55;
 const ORIGIN = { x: 120, y: 70 };
 const ROOF = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }];
 const SETBACK = { northM: 0.3, eastM: 0.3, southM: 0.3, westM: 0.3 };
 
-function worldToSvg(point: Point2D) {
-  return { x: ORIGIN.x + point.x * SCALE, y: ORIGIN.y + (6 - point.y) * SCALE };
-}
-
-function svgToWorld(clientX: number, clientY: number, rect: DOMRect): Point2D {
-  return { x: (clientX - rect.left - ORIGIN.x) / SCALE, y: 6 - (clientY - rect.top - ORIGIN.y) / SCALE };
-}
-
-function toEngine(panel: { id: string; x: number; y: number; rotation: number }): EnginePlacement {
-  return { id: panel.id, panelId: PANEL.id, center: { x: panel.x, y: panel.y }, rotation: panel.rotation as 0 | 90 | 180 | 270 };
-}
+function worldToSvg(point: Point2D) { return { x: ORIGIN.x + point.x * SCALE, y: ORIGIN.y + (6 - point.y) * SCALE }; }
+function svgToWorld(clientX: number, clientY: number, rect: DOMRect): Point2D { return { x: (clientX - rect.left - ORIGIN.x) / SCALE, y: 6 - (clientY - rect.top - ORIGIN.y) / SCALE }; }
+function toEngine(panel: { id: string; x: number; y: number; rotation: number }): EnginePlacement { return { id: panel.id, panelId: PANEL.id, center: { x: panel.x, y: panel.y }, rotation: panel.rotation as 0 | 90 | 180 | 270 }; }
 
 export function DesignWorkspace() {
   const { activeTool, setTool, zoom, setZoom, panels, selectedIds, addPanel, movePanel, rotatePanel, removePanel, select } = useDesignEditorStore();
   const stageRef = useRef<SVGSVGElement | null>(null);
   const [cursor, setCursor] = useState<Point2D | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-
   const enginePanels = useMemo(() => panels.map(toEngine), [panels]);
   const panelById = useCallback((id: string) => id === PANEL.id ? PANEL : undefined, []);
-  const preview = useMemo(() => {
-    if (!cursor || activeTool !== "panel") return null;
-    return createPlacementPreview(ROOF, PANEL, cursor, 0, enginePanels, panelById, SETBACK, 0.05);
-  }, [activeTool, cursor, enginePanels, panelById]);
+
+  const getPreview = useCallback((center: Point2D, rotation: 0 | 90 | 180 | 270, ignoreId?: string) => {
+    const existing = enginePanels.filter((panel) => panel.id !== ignoreId);
+    return createPlacementPreview(ROOF, PANEL, center, rotation, existing, panelById, SETBACK, 0.05, ignoreId ?? "preview");
+  }, [enginePanels, panelById]);
+
+  const preview = useMemo(() => cursor && activeTool === "panel" ? getPreview(cursor, 0) : null, [activeTool, cursor, getPreview]);
 
   const pointerToWorld = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -64,8 +49,13 @@ export function DesignWorkspace() {
     const point = pointerToWorld(event);
     if (!point) return;
     setCursor(point);
-    if (draggingId) movePanel(draggingId, point.x, point.y);
-  }, [draggingId, movePanel, pointerToWorld]);
+    if (draggingId) {
+      const current = panels.find((panel) => panel.id === draggingId);
+      if (!current) return;
+      const validation = getPreview(point, current.rotation as 0 | 90 | 180 | 270, draggingId);
+      if (validation.valid) movePanel(draggingId, point.x, point.y);
+    }
+  }, [draggingId, getPreview, movePanel, panels, pointerToWorld]);
 
   const onStageClick = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
     if (activeTool !== "panel" || !preview?.valid || draggingId) return;
@@ -99,11 +89,11 @@ export function DesignWorkspace() {
             <rect width="800" height="500" fill="url(#solar-grid)" />
             <polygon points={roofPoints} fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeWidth="2" />
             <text x={ORIGIN.x + 10} y={ORIGIN.y + 20} fontSize="13">Roof area · 60 m²</text>
-            {panels.map((panel) => { const p = worldToSvg({ x: panel.x, y: panel.y }); const w = PANEL.widthM * SCALE; const h = PANEL.lengthM * SCALE; return <g key={panel.id} transform={`translate(${p.x} ${p.y}) rotate(${-panel.rotation})`} onPointerDown={(event) => { event.stopPropagation(); select(panel.id); setDraggingId(panel.id); (event.currentTarget as SVGGElement).setPointerCapture(event.pointerId); }} onPointerUp={() => setDraggingId(null)} onDoubleClick={(event) => { event.stopPropagation(); rotatePanel(panel.id); }}><rect x={-w / 2} y={-h / 2} width={w} height={h} rx="2" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth={selectedIds.includes(panel.id) ? 3 : 1.5} /><path d={`M ${-w / 2} 0 H ${w / 2} M 0 ${-h / 2} V ${h / 2}`} stroke="currentColor" strokeOpacity="0.35" /></g>; })}
+            {panels.map((panel) => { const p = worldToSvg({ x: panel.x, y: panel.y }); const w = (panel.rotation % 180 === 0 ? PANEL.widthM : PANEL.lengthM) * SCALE; const h = (panel.rotation % 180 === 0 ? PANEL.lengthM : PANEL.widthM) * SCALE; return <g key={panel.id} transform={`translate(${p.x} ${p.y}) rotate(${-panel.rotation})`} onPointerDown={(event) => { event.stopPropagation(); select(panel.id); setDraggingId(panel.id); (event.currentTarget as SVGGElement).setPointerCapture(event.pointerId); }} onPointerUp={() => setDraggingId(null)} onDoubleClick={(event) => { event.stopPropagation(); rotatePanel(panel.id); }}><rect x={-w / 2} y={-h / 2} width={w} height={h} rx="2" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth={selectedIds.includes(panel.id) ? 3 : 1.5} /><path d={`M ${-w / 2} 0 H ${w / 2} M 0 ${-h / 2} V ${h / 2}`} stroke="currentColor" strokeOpacity="0.35" /></g>; })}
             {preview && cursor && <g pointerEvents="none" opacity="0.72"><rect x={worldToSvg(preview.placement.center).x - (PANEL.widthM * SCALE) / 2} y={worldToSvg(preview.placement.center).y - (PANEL.lengthM * SCALE) / 2} width={PANEL.widthM * SCALE} height={PANEL.lengthM * SCALE} fill="currentColor" fillOpacity="0.12" stroke="currentColor" strokeWidth="2" strokeDasharray="6 4" /></g>}
           </svg>
           <div className="stage-controls"><button onClick={() => setZoom(zoom - .25)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(zoom + .25)}>+</button></div>
-          {activeTool === "panel" && <div style={{ position: "absolute", left: 16, bottom: 16, fontSize: 12 }}>Panel tool · {preview?.valid ? "Valid placement" : "Move onto usable roof"}</div>}
+          {activeTool === "panel" && <div style={{ position: "absolute", left: 16, bottom: 16, fontSize: 12 }}>{preview?.valid ? "Valid placement · click to place" : "Invalid placement · move onto usable roof"}</div>}
         </section>
         <aside className="design-properties"><span className="toolbar-title">PROPERTIES</span><h3>Design</h3><div className="property"><span>Tool</span><strong>{activeTool}</strong></div><div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>{selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}<hr/><h3>System</h3><div className="metric"><strong>{panels.length}</strong><span>Panels</span></div><div className="metric"><strong>{capacity.toFixed(1)} kWp</strong><span>Capacity</span></div><div className="metric"><strong>60 m²</strong><span>Roof area</span></div></aside>
       </div>
