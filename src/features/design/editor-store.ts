@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DesignEditorState, DesignTool } from "./types";
+import type { DesignEditorState, DesignTool, PanelPlacement } from "./types";
 
 interface DesignActions {
   setTool: (tool: DesignTool) => void;
@@ -7,6 +7,10 @@ interface DesignActions {
   setPan: (x: number, y: number) => void;
   clearSelection: () => void;
   select: (id: string, additive?: boolean) => void;
+  addPanel: (panel: PanelPlacement) => void;
+  movePanel: (id: string, x: number, y: number) => void;
+  rotatePanel: (id: string) => void;
+  removePanel: (id: string) => void;
 }
 
 const initialState: DesignEditorState = {
@@ -14,7 +18,7 @@ const initialState: DesignEditorState = {
   zoom: 1,
   pan: { x: 0, y: 0 },
   selectedIds: [],
-  roofs: [],
+  roofs: [{ id: "roof-1", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }] }],
   panels: [],
   obstacles: [],
 };
@@ -26,4 +30,8 @@ export const useDesignEditorStore = create<DesignEditorState & DesignActions>((s
   setPan: (x, y) => set({ pan: { x, y } }),
   clearSelection: () => set({ selectedIds: [] }),
   select: (id, additive = false) => set((state) => ({ selectedIds: additive ? [...new Set([...state.selectedIds, id])] : [id] })),
+  addPanel: (panel) => set((state) => ({ panels: [...state.panels, panel], selectedIds: [panel.id] })),
+  movePanel: (id, x, y) => set((state) => ({ panels: state.panels.map((panel) => panel.id === id ? { ...panel, x, y } : panel) })),
+  rotatePanel: (id) => set((state) => ({ panels: state.panels.map((panel) => panel.id === id ? { ...panel, rotation: (panel.rotation + 90) % 360 } : panel) })),
+  removePanel: (id) => set((state) => ({ panels: state.panels.filter((panel) => panel.id !== id), selectedIds: state.selectedIds.filter((selectedId) => selectedId !== id) })),
 }));
