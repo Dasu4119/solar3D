@@ -6,6 +6,7 @@ export interface DesignPersistenceSnapshot {
   versionId?: string;
   roof: Point[];
   panelPlacements: PanelPlacement[];
+  metrics?: Record<string, unknown>;
 }
 
 export interface DesignPersistence {
@@ -13,26 +14,66 @@ export interface DesignPersistence {
   save(snapshot: DesignPersistenceSnapshot): Promise<DesignPersistenceSnapshot>;
 }
 
-export interface DesignPersistenceTransport {
-  get<T>(path: string): Promise<T>;
-  post<T>(path: string, body: unknown): Promise<T>;
+export interface ProjectApiResponse {
+  success?: boolean;
+  error?: string;
+  active_version?: { id?: string; metrics?: Record<string, unknown> } | null;
+  roofs?: Array<{ geometry?: Point[] }>;
+  panel_placements?: Array<{
+    id?: string;
+    x: number;
+    y: number;
+    z?: number | null;
+    rotation_degrees?: number | null;
+    tilt_degrees?: number | null;
+  }>;
+  design_version?: { id?: string; metrics?: Record<string, unknown> };
+}
+
+export interface ProjectApiInvoker {
+  invoke<T>(action: string, body: Record<string, unknown>): Promise<T>;
 }
 
 export class ApiDesignPersistence implements DesignPersistence {
-  constructor(private readonly transport: DesignPersistenceTransport) {}
+  constructor(private readonly api: ProjectApiInvoker) {}
 
-  load(designId: string): Promise<DesignPersistenceSnapshot | null> {
-    return this.transport.get<DesignPersistenceSnapshot | null>(`/api/designs/${encodeURIComponent(designId)}`);
+  async load(designId: string): Promise<DesignPersistenceSnapshot | null> {
+    const response = await this.api.invoke<ProjectApiResponse>("get_design", { design_id: designId });
+    if (!response.success || !response.active_version) return null;
+
+    const roof = response.roofs?.[0]?.geometry ?? [];
+    const panelPlacements = (response.panel_placements ?? []).map((placement) => ({
+      id: placement.id ?? crypto.randomUUID(),
+      panelId: "",
+      center: { x: placement.x, y: placement.y },
+      rotation: (placement.rotation_degrees ?? 0) as PanelPlacement["rotation"],
+    }));
+
+    return {
+      designId,
+      versionId: response.active_version.id,
+      roof,
+      panelPlacements,
+      metrics: response.active_version.metrics,
+    };
   }
 
-  save(snapshot: DesignPersistenceSnapshot): Promise<DesignPersistenceSnapshot> {
-    return this.transport.post<DesignPersistenceSnapshot>(
-      `/api/designs/${encodeURIComponent(snapshot.designId)}/versions`,
-      snapshot,
-    );
+  async save(snapshot: DesignPersistenceSnapshot): Promise<DesignPersistenceSnapshot> {
+    const response = await this.api.invoke<ProjectApiResponse>("save_design", {
+      design_id: snapshot.designId,
+      roof: { geometry: snapshot.roof },
+      panel_placements: snapshot.panelPlacements,
+      metrics: snapshot.metrics ?? { panel_count: snapshot.panelPlacements.length },
+    });
+
+    if (!response.success || !response.design_version?.id) {
+      throw new Error(response.error ?? "Unable to persist design");
+    }
+
+    return { ...snapshot, versionId: response.design_version.id };
   }
 }
 
-export function createDesignPersistence(transport: DesignPersistenceTransport): DesignPersistence {
-  return new ApiDesignPersistence(transport);
+export function createDesignPersistence(api: ProjectApiInvoker): DesignPersistence {
+  return new ApiDesignPersistence(api);
 }
