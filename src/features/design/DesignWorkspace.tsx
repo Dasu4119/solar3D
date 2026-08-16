@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPlacementPreview } from "@/engine/solar/placement-preview";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import type { PanelPlacement as EnginePlacement } from "@/engine/solar/placement";
+import { generateLayout, type GenerateLayoutResponse } from "@/features/auto-layout/api";
 import { useDesignEditorStore } from "./editor-store";
 import type { DesignTool, Point2D } from "./types";
 
@@ -25,11 +26,36 @@ function worldToSvg(point: Point2D) { return { x: ORIGIN.x + point.x * SCALE, y:
 function svgToWorld(clientX: number, clientY: number, rect: DOMRect): Point2D { return { x: (clientX - rect.left - ORIGIN.x) / SCALE, y: 6 - (clientY - rect.top - ORIGIN.y) / SCALE }; }
 function toEngine(panel: { id: string; x: number; y: number; rotation: number }): EnginePlacement { return { id: panel.id, panelId: PANEL.id, center: { x: panel.x, y: panel.y }, rotation: panel.rotation as 0 | 90 | 180 | 270 }; }
 
-export function DesignWorkspace() {
+function responseToPanels(response: GenerateLayoutResponse) {
+  return response.placements.map((raw, index) => {
+    const p = raw as Record<string, unknown>;
+    const center = (p.center ?? {}) as Record<string, unknown>;
+    const x = Number(p.x ?? center.x ?? 0);
+    const y = Number(p.y ?? center.y ?? 0);
+    const rotation = Number(p.rotation ?? 0);
+    return { id: String(p.id ?? `auto-panel-${index + 1}`), x, y, rotation };
+  });
+}
+
+interface DesignWorkspaceProps {
+  projectId?: string;
+  designVersionId?: string;
+  roofId?: string;
+  moduleId?: string;
+}
+
+export function DesignWorkspace({ projectId, designVersionId = "current", roofId = "roof-1", moduleId = PANEL.id }: DesignWorkspaceProps) {
   const { activeTool, setTool, zoom, setZoom, panels, selectedIds, addPanel, movePanel, rotatePanel, removePanel, select } = useDesignEditorStore();
   const stageRef = useRef<SVGSVGElement | null>(null);
   const [cursor, setCursor] = useState<Point2D | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [layoutBusy, setLayoutBusy] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  const [layoutResult, setLayoutResult] = useState<GenerateLayoutResponse | null>(null);
+  const [setback, setSetback] = useState(0.3);
+  const [rowSpacing, setRowSpacing] = useState(0.1);
+  const [orientation, setOrientation] = useState<"auto" | "portrait" | "landscape">("auto");
   const enginePanels = useMemo(() => panels.map(toEngine), [panels]);
   const panelById = useCallback((id: string) => id === PANEL.id ? PANEL : undefined, []);
 
@@ -63,6 +89,31 @@ export function DesignWorkspace() {
     addPanel({ id: `panel-${Date.now()}`, x: placement.center.x, y: placement.center.y, rotation: placement.rotation });
   }, [activeTool, addPanel, draggingId, preview]);
 
+  const runAutoLayout = useCallback(async () => {
+    setLayoutBusy(true);
+    setLayoutError(null);
+    try {
+      const response = await generateLayout({ designVersionId, roofId, moduleId, setbackM: setback, rowSpacingM: rowSpacing, orientation });
+      setLayoutResult(response);
+      const generated = responseToPanels(response);
+      if (generated.length === 0) throw new Error("The layout engine returned no valid panel placements.");
+      // Preview only: do not mutate the live editor until the user accepts the layout.
+    } catch (error) {
+      setLayoutError(error instanceof Error ? error.message : "Automatic layout failed.");
+    } finally {
+      setLayoutBusy(false);
+    }
+  }, [designVersionId, moduleId, orientation, roofId, rowSpacing, setback]);
+
+  const acceptLayout = useCallback(() => {
+    if (!layoutResult) return;
+    const generated = responseToPanels(layoutResult);
+    // Replace is intentionally implemented through the existing editor actions to keep manual editing semantics intact.
+    panels.forEach((panel) => removePanel(panel.id));
+    generated.forEach((panel) => addPanel(panel));
+    setLayoutOpen(false);
+  }, [addPanel, layoutResult, panels, removePanel]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "p") setTool("panel");
@@ -80,7 +131,7 @@ export function DesignWorkspace() {
 
   return (
     <div className="design-shell">
-      <header className="design-header"><strong>Solar3D</strong><span> / Design</span><div className="design-actions"><button>Save</button><button className="primary">Generate proposal</button></div></header>
+      <header className="design-header"><strong>Solar3D</strong><span> / Design</span><div className="design-actions"><button>Save</button><button className="primary" onClick={() => { setLayoutOpen(true); setLayoutResult(null); setLayoutError(null); }}>Generate Layout</button><button className="primary">Generate proposal</button></div></header>
       <div className="design-body">
         <aside className="design-toolbar"><span className="toolbar-title">TOOLS</span>{tools.map((tool) => <button key={tool.id} className={activeTool === tool.id ? "tool active" : "tool"} onClick={() => setTool(tool.id)}><span>{tool.label}</span><kbd>{tool.hint}</kbd></button>)}</aside>
         <section className="cad-stage" onPointerLeave={() => setCursor(null)}>
@@ -97,6 +148,21 @@ export function DesignWorkspace() {
         </section>
         <aside className="design-properties"><span className="toolbar-title">PROPERTIES</span><h3>Design</h3><div className="property"><span>Tool</span><strong>{activeTool}</strong></div><div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>{selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}<hr/><h3>System</h3><div className="metric"><strong>{panels.length}</strong><span>Panels</span></div><div className="metric"><strong>{capacity.toFixed(1)} kWp</strong><span>Capacity</span></div><div className="metric"><strong>60 m²</strong><span>Roof area</span></div></aside>
       </div>
+      {layoutOpen && <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.42)", display: "grid", placeItems: "center", padding: 24 }}>
+        <div style={{ width: "min(520px, 100%)", background: "var(--panel, #fff)", borderRadius: 16, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,.25)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}><div><h2 style={{ margin: 0 }}>Generate Layout</h2><p style={{ margin: "6px 0 0", opacity: .65 }}>Create a preview without replacing your manual design.</p></div><button onClick={() => setLayoutOpen(false)}>×</button></div>
+          <div style={{ display: "grid", gap: 14, marginTop: 22 }}>
+            <label>Edge setback · {setback.toFixed(2)} m<input type="range" min="0" max="2" step="0.05" value={setback} onChange={(e) => setSetback(Number(e.target.value))} style={{ width: "100%" }} /></label>
+            <label>Row spacing · {rowSpacing.toFixed(2)} m<input type="range" min="0" max="1" step="0.05" value={rowSpacing} onChange={(e) => setRowSpacing(Number(e.target.value))} style={{ width: "100%" }} /></label>
+            <label>Orientation<select value={orientation} onChange={(e) => setOrientation(e.target.value as typeof orientation)} style={{ display: "block", width: "100%", padding: 9, marginTop: 5 }}><option value="auto">Auto</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
+          </div>
+          {layoutError && <div role="alert" style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "rgba(200,40,40,.1)" }}>{layoutError}</div>}
+          {layoutResult && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 18 }}><div><strong>{layoutResult.panelCount}</strong><small style={{ display: "block", opacity: .6 }}>Panels</small></div><div><strong>{layoutResult.dcCapacityKw.toFixed(1)} kW</strong><small style={{ display: "block", opacity: .6 }}>DC capacity</small></div><div><strong>{layoutResult.roofCoveragePercent.toFixed(0)}%</strong><small style={{ display: "block", opacity: .6 }}>Coverage</small></div></div>}
+          {layoutResult?.warnings?.length ? <ul style={{ marginTop: 14, paddingLeft: 20 }}>{layoutResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}><button onClick={() => setLayoutOpen(false)}>Cancel</button>{layoutResult && <button className="primary" onClick={acceptLayout}>Accept layout</button>}<button className="primary" onClick={runAutoLayout} disabled={layoutBusy}>{layoutBusy ? "Generating…" : layoutResult ? "Regenerate" : "Generate"}</button></div>
+          {!projectId && <p style={{ marginBottom: 0, marginTop: 14, fontSize: 12, opacity: .6 }}>Project context is unavailable; configure the design identifiers before enabling production generation.</p>}
+        </div>
+      </div>}
       <footer className="design-footer"><span>{activeTool === "panel" ? (preview?.valid ? "Ready to place" : "Invalid placement") : "Ready"}</span><span>Grid · 0.5 m</span><span>Coordinates · {cursor ? `${cursor.x.toFixed(2)}, ${cursor.y.toFixed(2)}` : "0, 0"}</span></footer>
     </div>
   );
