@@ -8,6 +8,11 @@ export interface LayoutObstacle {
   clearanceM?: number;
 }
 
+export interface LayoutRoofRegion {
+  outer: Point[];
+  holes?: Point[][];
+}
+
 export interface LayoutConstraints {
   setbackM?: number;
   panelGapM?: number;
@@ -18,6 +23,7 @@ export interface LayoutConstraints {
 
 export interface LayoutRequest {
   roof: Point[];
+  roofRegions?: LayoutRoofRegion[];
   panel: SolarPanelSpec;
   constraints?: LayoutConstraints;
   existingPlacements?: PanelPlacement[];
