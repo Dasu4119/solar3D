@@ -2,11 +2,18 @@ import type { Point } from "@/engine/geometry/point";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import type { PanelPlacement } from "@/engine/solar/placement";
 
+export interface LayoutObstacle {
+  id: string;
+  polygon: Point[];
+  clearanceM?: number;
+}
+
 export interface LayoutConstraints {
   setbackM?: number;
   panelGapM?: number;
   edgeGapM?: number;
   allowedRotations?: number[];
+  obstacles?: LayoutObstacle[];
 }
 
 export interface LayoutRequest {
@@ -20,6 +27,7 @@ export interface LayoutCandidate {
   placement: PanelPlacement;
   valid: boolean;
   score: number;
+  blockedByObstacleId?: string;
 }
 
 export interface SolarLayoutResult {
