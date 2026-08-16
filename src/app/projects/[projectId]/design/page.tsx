@@ -8,7 +8,7 @@ export default async function DesignPage({ params }: { params: Promise<{ project
       <div style={{ position: "absolute", zIndex: 20, top: 14, left: 120 }}>
         <Link href={`/projects/${projectId}/overview`} style={{ fontSize: 13 }}>← Project</Link>
       </div>
-      <DesignWorkspace />
+      <DesignWorkspace projectId={projectId} />
     </>
   );
 }
