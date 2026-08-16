@@ -2,6 +2,7 @@ import type { Point } from "@/engine/geometry/point";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import type { PanelPlacement } from "@/engine/solar/placement";
 import { validatePanelPlacement } from "@/engine/solar/roof-validation";
+import { findBlockingObstacle, panelFootprint } from "./obstacles";
 import type { LayoutCandidate, LayoutConstraints } from "./types";
 
 function bounds(points: Point[]) {
@@ -39,7 +40,16 @@ export function generateLayoutCandidates(
         const result = validatePanelPlacement(roof, placement, panel, {
           northM: edge, eastM: edge, southM: edge, westM: edge,
         }, existingPlacements);
-        candidates.push({ placement, valid: result.valid, score: result.valid ? panel.powerWatts : -Infinity });
+        const blocker = result.valid
+          ? findBlockingObstacle(panelFootprint(placement.center, width, length, rotation), constraints.obstacles)
+          : undefined;
+        const valid = result.valid && !blocker;
+        candidates.push({
+          placement,
+          valid,
+          score: valid ? panel.powerWatts : -Infinity,
+          blockedByObstacleId: blocker?.id,
+        });
       }
     }
   }
