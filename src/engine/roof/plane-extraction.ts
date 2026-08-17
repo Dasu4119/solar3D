@@ -20,7 +20,6 @@ export interface PlaneExtractionOptions {
 
 const EPS = 1e-9;
 const deg = (r: number) => (r * 180) / Math.PI;
-const rad = (d: number) => (d * Math.PI) / 180;
 
 function sub(a: Vec3, b: Vec3): Vec3 { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
 function add(a: Vec3, b: Vec3): Vec3 { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; }
@@ -43,21 +42,13 @@ function angleDeg(a: Vec3, b: Vec3): number {
   return deg(Math.acos(v));
 }
 function canonicalNormal(n: Vec3): Vec3 {
-  // Roof planes use upward-facing normals so pitch/azimuth are stable regardless of triangle winding.
   return n.z < 0 ? scale(n, -1) : n;
 }
 function planeDistance(n: Vec3, p: Vec3, q: Vec3): number { return Math.abs(dot(n, sub(q,p))); }
-function keyForNormal(n: Vec3, toleranceDeg: number): string {
-  const step = Math.max(rad(toleranceDeg), rad(0.01));
-  const az = Math.atan2(n.y, n.x);
-  const pitch = Math.acos(Math.min(1, Math.max(-1,n.z)));
-  return `${Math.round(pitch/step)}:${Math.round(az/step)}`;
-}
 
 export function roofPlaneOrientation(normal: Vec3): Pick<RoofPlane, 'pitchDeg'|'azimuthDeg'> {
   const n = canonicalNormal(normalize(normal));
   const pitchDeg = deg(Math.acos(Math.min(1, Math.max(-1, n.z))));
-  // Azimuth is clockwise from north: +Y north, +X east.
   const azimuthDeg = (deg(Math.atan2(n.x, n.y)) + 360) % 360;
   return { pitchDeg, azimuthDeg };
 }
@@ -72,7 +63,7 @@ export function extractRoofPlanes(mesh: RoofMesh, options: PlaneExtractionOption
     const raw = triangleNormal(a,b,c);
     const area = triangleArea(a,b,c);
     if (area < minAreaM2 || length(raw) <= EPS) return null;
-    return { index, t, a, b, c, normal: canonicalNormal(raw), area, center: centroid([a,b,c]) };
+    return { index, t, a, b, c, normal: canonicalNormal(raw), area };
   }).filter((x): x is NonNullable<typeof x> => x !== null);
 
   const groups: Array<typeof candidates> = [];
