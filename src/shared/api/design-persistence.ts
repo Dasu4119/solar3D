@@ -42,7 +42,11 @@ export interface ProjectApiInvoker {
   invoke<T>(action: string, body: Record<string, unknown>): Promise<T>;
 }
 
-function decodeRoofGeometry(geometry: ProjectApiResponse["roofs"] extends Array<infer R> ? R extends { geometry?: infer G } ? G : never : never) {
+export function encodeRoofGeometry(mesh: Point[], roofPlanes: RoofPlane[] = []): PersistedRoofGeometry {
+  return { schemaVersion: 1, mesh, planes: roofPlanes };
+}
+
+export function decodeRoofGeometry(geometry: Point[] | PersistedRoofGeometry | undefined) {
   if (geometry && !Array.isArray(geometry) && geometry.schemaVersion === 1) {
     return { mesh: geometry.mesh, roofPlanes: geometry.planes };
   }
@@ -75,11 +79,7 @@ export class ApiDesignPersistence implements DesignPersistence {
   }
 
   async save(snapshot: DesignPersistenceSnapshot): Promise<DesignPersistenceSnapshot> {
-    const roofGeometry: PersistedRoofGeometry = {
-      schemaVersion: 1,
-      mesh: snapshot.roof,
-      planes: snapshot.roofPlanes ?? [],
-    };
+    const roofGeometry = encodeRoofGeometry(snapshot.roof, snapshot.roofPlanes ?? []);
     const response = await this.api.invoke<ProjectApiResponse>("save_design", {
       design_id: snapshot.designId,
       roof: { geometry: roofGeometry },
