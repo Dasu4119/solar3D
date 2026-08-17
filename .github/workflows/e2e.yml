@@ -1,0 +1,36 @@
+name: E2E Persistence
+
+on:
+  pull_request:
+    paths:
+      - 'e2e/**'
+      - 'src/shared/api/**'
+      - 'src/engine/**'
+      - 'vitest.config.*'
+      - 'playwright.config.*'
+      - '.github/workflows/e2e.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'npm-shrinkwrap.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Run persistence unit tests
+        run: npm run test:unit -- src/shared/api/__tests__/design-persistence-roof.test.ts
+      - run: npx playwright install --with-deps chromium
+      - name: Run persistence E2E
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
+          E2E_STORAGE_STATE: ${{ secrets.E2E_STORAGE_STATE }}
+        run: npm run test:e2e -- --project=chromium

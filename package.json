@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "next": "latest",
@@ -25,6 +27,8 @@
     "typescript": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "@playwright/test": "latest",
+    "vitest": "latest"
   }
 }
