@@ -28,35 +28,84 @@ export interface RoofExclusionZone {
   source: "edge" | "obstacle";
   sourceId: string;
   polygon: Polygon2D;
+  clearanceM: number;
 }
 
 export interface UsableRoofRegion {
   roof: Polygon2D;
   exclusions: RoofExclusionZone[];
+  edgeSetbackM: number;
 }
 
 const EPSILON = 1e-9;
 
-function bounds(points: Polygon2D) {
-  return points.reduce(
-    (result, point) => ({
-      minX: Math.min(result.minX, point.x),
-      maxX: Math.max(result.maxX, point.x),
-      minY: Math.min(result.minY, point.y),
-      maxY: Math.max(result.maxY, point.y),
-    }),
-    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
-  );
+function distanceSquared(a: Point2D, b: Point2D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
 }
 
-function expandBounds(points: Polygon2D, clearanceM: number): Polygon2D {
-  const b = bounds(points);
-  return [
-    { x: b.minX - clearanceM, y: b.minY - clearanceM },
-    { x: b.maxX + clearanceM, y: b.minY - clearanceM },
-    { x: b.maxX + clearanceM, y: b.maxY + clearanceM },
-    { x: b.minX - clearanceM, y: b.maxY + clearanceM },
-  ];
+function distanceToSegmentSquared(point: Point2D, start: Point2D, end: Point2D): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= EPSILON) return distanceSquared(point, start);
+
+  const t = Math.max(0, Math.min(1,
+    ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared,
+  ));
+  return distanceSquared(point, { x: start.x + t * dx, y: start.y + t * dy });
+}
+
+function distanceToPolygon(point: Point2D, polygon: Polygon2D): number {
+  if (polygon.length < 2) return Infinity;
+  let minimum = Infinity;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const next = (index + 1) % polygon.length;
+    minimum = Math.min(minimum,
+      distanceToSegmentSquared(point, polygon[index], polygon[next]),
+    );
+  }
+  return Math.sqrt(minimum);
+}
+
+function orientation(a: Point2D, b: Point2D, c: Point2D): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function onSegment(a: Point2D, b: Point2D, point: Point2D): boolean {
+  return point.x >= Math.min(a.x, b.x) - EPSILON
+    && point.x <= Math.max(a.x, b.x) + EPSILON
+    && point.y >= Math.min(a.y, b.y) - EPSILON
+    && point.y <= Math.max(a.y, b.y) + EPSILON;
+}
+
+function segmentsIntersect(a: Point2D, b: Point2D, c: Point2D, d: Point2D): boolean {
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+
+  if (((o1 > EPSILON && o2 < -EPSILON) || (o1 < -EPSILON && o2 > EPSILON))
+    && ((o3 > EPSILON && o4 < -EPSILON) || (o3 < -EPSILON && o4 > EPSILON))) return true;
+
+  return (Math.abs(o1) <= EPSILON && onSegment(a, b, c))
+    || (Math.abs(o2) <= EPSILON && onSegment(a, b, d))
+    || (Math.abs(o3) <= EPSILON && onSegment(c, d, a))
+    || (Math.abs(o4) <= EPSILON && onSegment(c, d, b));
+}
+
+function polygonEdgesIntersect(first: Polygon2D, second: Polygon2D): boolean {
+  for (let firstIndex = 0; firstIndex < first.length; firstIndex += 1) {
+    const firstNext = (firstIndex + 1) % first.length;
+    for (let secondIndex = 0; secondIndex < second.length; secondIndex += 1) {
+      const secondNext = (secondIndex + 1) % second.length;
+      if (segmentsIntersect(
+        first[firstIndex], first[firstNext], second[secondIndex], second[secondNext],
+      )) return true;
+    }
+  }
+  return false;
 }
 
 export function buildRoofExclusions(
@@ -70,7 +119,8 @@ export function buildRoofExclusions(
     .map((obstacle) => ({
       source: "obstacle" as const,
       sourceId: obstacle.id,
-      polygon: expandBounds(obstacle.footprint, clearance),
+      polygon: [...obstacle.footprint],
+      clearanceM: clearance,
     }));
 }
 
@@ -79,24 +129,40 @@ export function buildUsableRoofRegion(
   obstacles: RoofObstacle[] = [],
   rules: RoofSetbackRules = {},
 ): UsableRoofRegion {
-  if (roof.length < 3) return { roof: [], exclusions: [] };
+  if (roof.length < 3) return { roof: [], exclusions: [], edgeSetbackM: 0 };
 
-  const exclusions = buildRoofExclusions(roof, obstacles, rules);
-  return { roof: [...roof], exclusions };
+  const edgeSetbackM = Math.max(0, rules.edgeM ?? 0);
+  return {
+    roof: [...roof],
+    exclusions: buildRoofExclusions(roof, obstacles, rules),
+    edgeSetbackM,
+  };
 }
 
 export function isPointUsable(point: Point2D, region: UsableRoofRegion): boolean {
   if (region.roof.length < 3 || !pointInPolygon(point, region.roof)) return false;
-  return !region.exclusions.some((exclusion) => pointInPolygon(point, exclusion.polygon));
+  if (region.edgeSetbackM > 0 && distanceToPolygon(point, region.roof) < region.edgeSetbackM - EPSILON) return false;
+
+  return !region.exclusions.some((exclusion) => {
+    if (pointInPolygon(point, exclusion.polygon)) return true;
+    return exclusion.clearanceM > 0
+      && distanceToPolygon(point, exclusion.polygon) < exclusion.clearanceM - EPSILON;
+  });
 }
 
 export function isPolygonUsable(polygon: Polygon2D, region: UsableRoofRegion): boolean {
   if (polygon.length < 3) return false;
-  return polygon.every((point) => isPointUsable(point, region));
+  if (!polygon.every((point) => isPointUsable(point, region))) return false;
+
+  if (polygonEdgesIntersect(polygon, region.roof) && polygon.some((point) => !pointInPolygon(point, region.roof))) {
+    return false;
+  }
+
+  return !region.exclusions.some((exclusion) => polygonEdgesIntersect(polygon, exclusion.polygon));
 }
 
 export function hasUsableArea(region: UsableRoofRegion): boolean {
-  return region.roof.length >= 3 && region.exclusions.every((exclusion) => exclusion.polygon.length >= 3);
+  return region.roof.length >= 3;
 }
 
 export { EPSILON };
