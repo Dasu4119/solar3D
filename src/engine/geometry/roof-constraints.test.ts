@@ -31,6 +31,7 @@ describe("roof obstacle constraints", () => {
     expect(region.exclusions[0].sourceId).toBe("chimney-1");
     expect(isPointUsable({ x: 2, y: 2 }, region)).toBe(true);
     expect(isPointUsable({ x: 4.5, y: 4.5 }, region)).toBe(false);
+    expect(isPointUsable({ x: 3.5, y: 3.5 }, region)).toBe(false);
   });
 
   it("rejects a panel footprint crossing an obstacle clearance zone", () => {
@@ -53,6 +54,19 @@ describe("roof obstacle constraints", () => {
       { x: 6.4, y: 3.1 },
       { x: 5.7, y: 3.1 },
     ], region)).toBe(false);
+  });
+
+  it("applies a true edge setback on a non-axis-aligned roof", () => {
+    const rotatedRoof = [
+      { x: 0, y: 0 },
+      { x: 8, y: 2 },
+      { x: 7, y: 8 },
+      { x: -1, y: 6 },
+    ];
+    const region = buildUsableRoofRegion(rotatedRoof, [], { edgeM: 1 });
+
+    expect(isPointUsable({ x: 3, y: 4 }, region)).toBe(true);
+    expect(isPointUsable({ x: 0.1, y: 0.1 }, region)).toBe(false);
   });
 
   it("keeps unrelated roof area usable", () => {
