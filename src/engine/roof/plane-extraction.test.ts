@@ -17,10 +17,10 @@ describe('roof plane extraction', () => {
   it('separates a two-plane gable roof', () => {
     const m = mesh([
       {x:0,y:0,z:0},{x:2,y:0,z:0},{x:2,y:2,z:1},{x:0,y:2,z:1},
-      {x:4,y:4,z:0},{x:2,y:4,z:0}
+      {x:2,y:4,z:0},{x:0,y:4,z:0}
     ], [
       {a:0,b:1,c:2},{a:0,b:2,c:3},
-      {a:1,b:4,c:5},{a:1,b:5,c:2}
+      {a:1,b:4,c:2},{a:0,b:3,c:5}
     ]);
     const planes = extractRoofPlanes(m, { minAreaM2: 0.1 });
     expect(planes).toHaveLength(2); expect(planes.every(p => p.pitchDeg > 0)).toBe(true);
