@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useProjects } from "@/shared/api/project.queries";
 import type { Project } from "@/shared/types/domain";
+import { getDashboardProductionMetrics, type DashboardProductionSource } from "./production-metrics";
 
 function projectName(project: Project) {
   return project.name || "Untitled project";
@@ -22,6 +23,10 @@ function statusLabel(status: string | null | undefined) {
   }
 }
 
+function productionSource(project: Project): DashboardProductionSource {
+  return project as Project & DashboardProductionSource;
+}
+
 export default function DashboardPage() {
   const { data: projects, isLoading, isError, error, refetch } = useProjects();
   const source = projects ?? [];
@@ -30,12 +35,22 @@ export default function DashboardPage() {
     const active = source.filter((project) => project.status !== "completed").length;
     const inDesign = source.filter((project) => project.status === "in_design").length;
     const proposal = source.filter((project) => project.status === "proposal").length;
+    const production = source
+      .map((project) => getDashboardProductionMetrics(productionSource(project)))
+      .filter((result): result is NonNullable<typeof result> => result !== null);
+    const capacity = production.reduce((sum, result) => sum + result.dcCapacityKwp, 0);
+    const annualKwh = production.reduce((sum, result) => sum + result.annualKwh, 0);
+    const shadingLoss = production.length
+      ? production.reduce((sum, result) => sum + result.shadingLossPct, 0) / production.length
+      : null;
 
     return [
       ["Active projects", String(active)],
       ["Designs in progress", String(inDesign)],
       ["Ready for proposal", String(proposal)],
-      ["Estimated capacity", "—"],
+      ["DC capacity", production.length ? `${capacity.toFixed(1)} kWp` : "—"],
+      ["Annual production", production.length ? `${Math.round(annualKwh).toLocaleString()} kWh` : "—"],
+      ["Shading loss", shadingLoss !== null ? `${shadingLoss.toFixed(1)}%` : "—"],
     ];
   }, [source]);
 
