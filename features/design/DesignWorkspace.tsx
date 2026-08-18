@@ -7,6 +7,7 @@ import type { PanelPlacement as EnginePlacement } from "@/engine/solar/placement
 import { createDesignPersistence } from "@/shared/api/design-persistence";
 import { invokeFunction } from "@/shared/api/client";
 import { useDesignEditorStore } from "./editor-store";
+import { ProductionDashboard } from "./ProductionDashboard";
 import type { DesignTool, Point2D } from "./types";
 
 const tools: { id: DesignTool; label: string; hint: string }[] = [
@@ -124,6 +125,8 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
   const roofPoints = roof.map(worldToSvg).map((p) => `${p.x},${p.y}`).join(" ");
   const selected = panels.find((panel) => panel.id === selectedIds[0]);
   const capacity = panels.length * PANEL.powerWatts / 1000;
+  const roofAreaM2 = 60;
+  const usableRoofAreaM2 = 9.4 * 5.4;
 
   return (
     <div className="design-shell">
@@ -142,7 +145,16 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
           <div className="stage-controls"><button onClick={() => setZoom(zoom - .25)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(zoom + .25)}>+</button></div>
           {activeTool === "panel" && <div style={{ position: "absolute", left: 16, bottom: 16, fontSize: 12 }}>{preview?.valid ? "Valid placement · click to place" : "Invalid placement · move onto usable roof"}</div>}
         </section>
-        <aside className="design-properties"><span className="toolbar-title">PROPERTIES</span><h3>Design</h3><div className="property"><span>Tool</span><strong>{activeTool}</strong></div><div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>{selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}<hr/><h3>System</h3><div className="metric"><strong>{panels.length}</strong><span>Panels</span></div><div className="metric"><strong>{capacity.toFixed(1)} kWp</strong><span>Capacity</span></div><div className="metric"><strong>60 m²</strong><span>Roof area</span></div>{saveError && <div style={{ marginTop: 12, fontSize: 12 }}>{saveError}</div>}</aside>
+        <aside className="design-properties">
+          <span className="toolbar-title">PROPERTIES</span>
+          <h3>Design</h3>
+          <div className="property"><span>Tool</span><strong>{activeTool}</strong></div>
+          <div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>
+          {selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}
+          <hr/>
+          <ProductionDashboard metrics={{ panelCount: panels.length, dcCapacityKw: capacity, roofAreaM2, usableRoofAreaM2 }} />
+          {saveError && <div style={{ marginTop: 12, fontSize: 12 }}>{saveError}</div>}
+        </aside>
       </div>
       <footer className="design-footer"><span>{saveState === "loading" ? "Loading design…" : saveState === "saving" ? "Saving…" : saveState === "error" ? "Persistence error" : activeTool === "panel" ? (preview?.valid ? "Ready to place" : "Invalid placement") : "Ready"}</span><span>Grid · 0.5 m</span><span>Coordinates · {cursor ? `${cursor.x.toFixed(2)}, ${cursor.y.toFixed(2)}` : "0, 0"}</span></footer>
     </div>
