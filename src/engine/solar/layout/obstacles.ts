@@ -51,7 +51,7 @@ function segmentsIntersect(a: Point, b: Point, c: Point, d: Point): boolean {
     (o3 === 0 && onSegment(c, a, d)) || (o4 === 0 && onSegment(c, b, d));
 }
 
-function polygonsIntersect(a: Point[], b: Point[]): boolean {
+export function polygonsIntersect(a: Point[], b: Point[]): boolean {
   if (!a.length || !b.length) return false;
   const ba = bounds(a);
   const bb = bounds(b);
