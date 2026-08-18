@@ -8,7 +8,6 @@ on:
       - 'src/engine/solar/production/**'
       - '.github/workflows/p1e3-production.yml'
       - 'package.json'
-      - 'package-lock.json'
   workflow_dispatch:
 
 jobs:
@@ -20,8 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+      - run: npm install
       - name: Run production engine tests
         run: npm run test:unit -- src/engine/solar/production/annual-production.test.ts
       - name: Run dashboard production adapter tests
