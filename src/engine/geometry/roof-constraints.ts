@@ -95,6 +95,16 @@ function segmentsIntersect(a: Point2D, b: Point2D, c: Point2D, d: Point2D): bool
     || (Math.abs(o4) <= EPSILON && onSegment(c, d, b));
 }
 
+function segmentDistanceSquared(a: Point2D, b: Point2D, c: Point2D, d: Point2D): number {
+  if (segmentsIntersect(a, b, c, d)) return 0;
+  return Math.min(
+    distanceToSegmentSquared(a, c, d),
+    distanceToSegmentSquared(b, c, d),
+    distanceToSegmentSquared(c, a, b),
+    distanceToSegmentSquared(d, a, b),
+  );
+}
+
 function polygonEdgesIntersect(first: Polygon2D, second: Polygon2D): boolean {
   for (let firstIndex = 0; firstIndex < first.length; firstIndex += 1) {
     const firstNext = (firstIndex + 1) % first.length;
@@ -108,8 +118,29 @@ function polygonEdgesIntersect(first: Polygon2D, second: Polygon2D): boolean {
   return false;
 }
 
+function polygonBoundaryDistance(first: Polygon2D, second: Polygon2D): number {
+  let minimum = Infinity;
+  for (let firstIndex = 0; firstIndex < first.length; firstIndex += 1) {
+    const firstNext = (firstIndex + 1) % first.length;
+    for (let secondIndex = 0; secondIndex < second.length; secondIndex += 1) {
+      const secondNext = (secondIndex + 1) % second.length;
+      minimum = Math.min(
+        minimum,
+        Math.sqrt(segmentDistanceSquared(
+          first[firstIndex], first[firstNext], second[secondIndex], second[secondNext],
+        )),
+      );
+    }
+  }
+  return minimum;
+}
+
+function polygonContainsPolygon(container: Polygon2D, candidate: Polygon2D): boolean {
+  return candidate.some((point) => pointInPolygon(point, container));
+}
+
 export function buildRoofExclusions(
-  roof: Polygon2D,
+  _roof: Polygon2D,
   obstacles: RoofObstacle[],
   rules: RoofSetbackRules = {},
 ): RoofExclusionZone[] {
@@ -154,11 +185,15 @@ export function isPolygonUsable(polygon: Polygon2D, region: UsableRoofRegion): b
   if (polygon.length < 3) return false;
   if (!polygon.every((point) => isPointUsable(point, region))) return false;
 
-  if (polygonEdgesIntersect(polygon, region.roof) && polygon.some((point) => !pointInPolygon(point, region.roof))) {
-    return false;
-  }
+  if (polygonEdgesIntersect(polygon, region.roof)) return false;
+  if (polygonBoundaryDistance(polygon, region.roof) < region.edgeSetbackM - EPSILON) return false;
+  if (polygonContainsPolygon(region.roof, polygon) === false) return false;
 
-  return !region.exclusions.some((exclusion) => polygonEdgesIntersect(polygon, exclusion.polygon));
+  return !region.exclusions.some((exclusion) => {
+    if (polygonEdgesIntersect(polygon, exclusion.polygon)) return true;
+    if (polygonContainsPolygon(polygon, exclusion.polygon)) return true;
+    return polygonBoundaryDistance(polygon, exclusion.polygon) < exclusion.clearanceM - EPSILON;
+  });
 }
 
 export function hasUsableArea(region: UsableRoofRegion): boolean {
