@@ -1,4 +1,4 @@
-import { calculateAnnualProduction } from "@/src/engine/solar/production/annual-production";
+import { calculateAnnualProduction } from "@/engine/solar/production/annual-production";
 
 export interface DashboardProductionSource {
   panelCount?: number;
