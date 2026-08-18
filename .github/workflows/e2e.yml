@@ -30,7 +30,10 @@ jobs:
         run: npm run test:unit -- src/shared/api/__tests__/design-persistence-roof.test.ts
       - name: Run production heatmap unit tests
         run: npm run test:unit -- features/design/production-heatmap.test.ts
-      - run: npx playwright install --with-deps chromium
+      - name: Run annual production engine unit tests
+        run: npm run test:unit -- src/engine/solar/production/annual-production.test.ts
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
       - name: Run persistence E2E
         env:
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
