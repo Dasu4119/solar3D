@@ -6,6 +6,7 @@ on:
       - 'e2e/**'
       - 'src/shared/api/**'
       - 'src/engine/**'
+      - 'features/design/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
       - '.github/workflows/e2e.yml'
@@ -27,6 +28,8 @@ jobs:
       - run: npm install
       - name: Run persistence unit tests
         run: npm run test:unit -- src/shared/api/__tests__/design-persistence-roof.test.ts
+      - name: Run production heatmap unit tests
+        run: npm run test:unit -- features/design/production-heatmap.test.ts
       - run: npx playwright install --with-deps chromium
       - name: Run persistence E2E
         env:
