@@ -32,7 +32,8 @@ jobs:
         run: npm run test:unit -- features/design/production-heatmap.test.ts
       - name: Run annual production engine unit tests
         run: npm run test:unit -- src/engine/solar/production/annual-production.test.ts
-      - npx playwright install --with-deps chromium
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
       - name: Run persistence E2E
         env:
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
