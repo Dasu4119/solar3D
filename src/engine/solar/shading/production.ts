@@ -9,6 +9,8 @@ export interface SolarProductionRequest extends SolarPositionInput {
   panel: SolarPanelSpec;
   placements: PanelPlacement[];
   roofPlanes: RoofPlane[];
+  /** Explicit mapping is required for multi-plane layouts because PanelPlacement is intentionally geometry-only. */
+  placementRoofPlaneIds?: Record<string, string>;
   obstacles?: RoofObstaclePrism[];
   irradiance?: IrradianceModel;
   occlusion?: OcclusionOptions;
@@ -34,22 +36,24 @@ export interface SolarProductionResult {
 export function estimateSolarProduction(request: SolarProductionRequest): SolarProductionResult {
   const sun = solarPosition({ date: request.date, latitudeDeg: request.latitudeDeg, longitudeDeg: request.longitudeDeg });
   const planesById = new Map(request.roofPlanes.map((plane) => [plane.id, plane]));
-  const obstacles = request.obstacles ?? [];
+  const planeForPlacement = (placement: PanelPlacement): RoofPlane | undefined => {
+    const planeId = request.placementRoofPlaneIds?.[placement.id];
+    return planeId ? planesById.get(planeId) : request.roofPlanes.length === 1 ? request.roofPlanes[0] : undefined;
+  };
   const shadeFractions = calculateShadeFractions(
     request.panel,
     request.placements,
     (placementId) => {
       const placement = request.placements.find((candidate) => candidate.id === placementId);
-      const planeId = placement?.roofPlaneId;
-      return planeId ? planesById.get(planeId) : request.roofPlanes.length === 1 ? request.roofPlanes[0] : undefined;
+      return placement ? planeForPlacement(placement) : undefined;
     },
     sun.vectorENU,
-    obstacles,
+    request.obstacles ?? [],
     request.occlusion,
   );
 
   const panels = request.placements.map((placement) => {
-    const plane = placement.roofPlaneId ? planesById.get(placement.roofPlaneId) : request.roofPlanes.length === 1 ? request.roofPlanes[0] : undefined;
+    const plane = planeForPlacement(placement);
     const shadeFraction = shadeFractions.get(placement.id) ?? 0;
     const result = plane
       ? estimatePanelIrradiance(
@@ -66,14 +70,18 @@ export function estimateSolarProduction(request: SolarProductionRequest): SolarP
         )
       : { irradianceWm2: 0, unshadedIrradianceWm2: 0, shadeFraction, estimatedDcPowerWatts: 0 };
 
-    return { placementId: placement.id, roofPlaneId: placement.roofPlaneId, ...result };
+    return {
+      placementId: placement.id,
+      roofPlaneId: request.placementRoofPlaneIds?.[placement.id],
+      ...result,
+    };
   });
 
   const totalDcPowerWatts = panels.reduce((sum, panel) => sum + panel.estimatedDcPowerWatts, 0);
-  const unshadedDcPowerWatts = panels.reduce((sum, panel) => {
-    const unshaded = Math.min(request.panel.powerWatts, panel.unshadedIrradianceWm2 * request.panel.widthM * request.panel.lengthM * request.panel.efficiency);
-    return sum + unshaded;
-  }, 0);
+  const unshadedDcPowerWatts = panels.reduce(
+    (sum, panel) => sum + Math.min(request.panel.powerWatts, panel.unshadedIrradianceWm2 * request.panel.widthM * request.panel.lengthM * request.panel.efficiency),
+    0,
+  );
   const averageShadeFraction = panels.length
     ? panels.reduce((sum, panel) => sum + panel.shadeFraction, 0) / panels.length
     : 0;
