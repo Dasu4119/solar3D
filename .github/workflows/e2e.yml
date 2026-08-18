@@ -14,6 +14,21 @@ on:
       - 'pnpm-lock.yaml'
       - 'npm-shrinkwrap.json'
       - 'package-lock.json'
+  push:
+    branches:
+      - 'feat/p1e3-dashboard-production'
+    paths:
+      - 'e2e/**'
+      - 'src/shared/api/**'
+      - 'src/engine/**'
+      - 'features/design/**'
+      - 'vitest.config.*'
+      - 'playwright.config.*'
+      - '.github/workflows/e2e.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'npm-shrinkwrap.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 jobs:
@@ -32,6 +47,8 @@ jobs:
         run: npm run test:unit -- features/design/production-heatmap.test.ts
       - name: Run annual production engine unit tests
         run: npm run test:unit -- src/engine/solar/production/annual-production.test.ts
+      - name: Run dashboard production adapter unit tests
+        run: npm run test:unit -- src/app/dashboard/production-metrics.test.ts
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run persistence E2E
