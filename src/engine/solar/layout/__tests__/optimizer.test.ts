@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildUsableRoofRegion } from "@/engine/geometry/roof-constraints";
 import type { Point } from "@/engine/geometry/point";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import { generateSolarLayout } from "../optimizer";
@@ -24,5 +25,32 @@ describe("automatic solar layout", () => {
     const open = generateSolarLayout({ roof, panel, constraints: { edgeGapM: 0 } });
     const restricted = generateSolarLayout({ roof, panel, constraints: { edgeGapM: 1 } });
     expect(restricted.placements.length).toBeLessThanOrEqual(open.placements.length);
+  });
+
+  it("passes canonical P1-B regions through the optimizer", () => {
+    const canonical = buildUsableRoofRegion(
+      roof,
+      [{
+        id: "chimney-1",
+        type: "chimney",
+        footprint: [
+          { x: 4, y: 1.5 },
+          { x: 6, y: 1.5 },
+          { x: 6, y: 3.5 },
+          { x: 4, y: 3.5 },
+        ],
+      }],
+      { obstacleClearanceM: 1 },
+    );
+
+    const result = generateSolarLayout({
+      roof,
+      panel,
+      constraints: { allowedRotations: [0] },
+      usableRoofRegions: [canonical],
+    });
+
+    expect(result.placements.length).toBeGreaterThan(0);
+    expect(result.placements.every((placement) => placement.center.x < 3 || placement.center.x > 7)).toBe(true);
   });
 });
