@@ -9,6 +9,11 @@ export interface ProductionDashboardMetrics {
   shadingLossPct?: number;
 }
 
+export function calculateRoofUtilization(roofAreaM2: number, usableRoofAreaM2: number): number {
+  if (!Number.isFinite(roofAreaM2) || roofAreaM2 <= 0 || !Number.isFinite(usableRoofAreaM2)) return 0;
+  return Math.max(0, Math.min(100, (usableRoofAreaM2 / roofAreaM2) * 100));
+}
+
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="production-metric">
@@ -20,9 +25,7 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 }
 
 export function ProductionDashboard({ metrics }: { metrics: ProductionDashboardMetrics }) {
-  const utilization = metrics.roofAreaM2 > 0
-    ? Math.max(0, Math.min(100, (metrics.usableRoofAreaM2 / metrics.roofAreaM2) * 100))
-    : 0;
+  const utilization = calculateRoofUtilization(metrics.roofAreaM2, metrics.usableRoofAreaM2);
 
   return (
     <section className="production-dashboard" aria-label="Solar production summary">
