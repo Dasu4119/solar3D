@@ -56,7 +56,29 @@ describe("roof obstacle constraints", () => {
     ], region)).toBe(false);
   });
 
-  it("applies a true edge setback on a non-axis-aligned roof", () => {
+  it("rejects a panel whose edge enters obstacle clearance even when its vertices are clear", () => {
+    const region = buildUsableRoofRegion(roof, [
+      {
+        id: "vent-1",
+        type: "vent",
+        footprint: [
+          { x: 4.5, y: 3.5 },
+          { x: 5.5, y: 3.5 },
+          { x: 5.5, y: 4.5 },
+          { x: 4.5, y: 4.5 },
+        ],
+      },
+    ], { obstacleClearanceM: 0.5 });
+
+    expect(isPolygonUsable([
+      { x: 3.8, y: 3.0 },
+      { x: 6.2, y: 3.0 },
+      { x: 6.2, y: 3.2 },
+      { x: 3.8, y: 3.2 },
+    ], region)).toBe(false);
+  });
+
+  it("rejects a panel whose edge violates a rotated roof edge setback", () => {
     const rotatedRoof = [
       { x: 0, y: 0 },
       { x: 8, y: 2 },
@@ -67,6 +89,12 @@ describe("roof obstacle constraints", () => {
 
     expect(isPointUsable({ x: 3, y: 4 }, region)).toBe(true);
     expect(isPointUsable({ x: 0.1, y: 0.1 }, region)).toBe(false);
+    expect(isPolygonUsable([
+      { x: 1.0, y: 0.6 },
+      { x: 2.0, y: 0.85 },
+      { x: 2.0, y: 1.3 },
+      { x: 1.0, y: 1.05 },
+    ], region)).toBe(false);
   });
 
   it("keeps unrelated roof area usable", () => {
