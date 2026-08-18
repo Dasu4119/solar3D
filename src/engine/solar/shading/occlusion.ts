@@ -21,10 +21,6 @@ export interface OcclusionOptions {
 
 const EPSILON = 1e-9;
 
-function dot(a: Vector3, b: Vector3): number {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
 function add(a: Vector3, b: Vector3): Vector3 {
   return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
 }
@@ -99,20 +95,16 @@ function rayHitsPrism(origin: Vector3, direction: Vector3, obstacle: RoofObstacl
     if (!unique.length || Math.abs(t - unique[unique.length - 1]) > 1e-7) unique.push(t);
   }
 
-  for (const t of unique) {
-    if (t >= 0 && t <= maxDistance) {
-      const p = add(origin, scale(direction, t));
-      if (p.z >= minZ - EPSILON && p.z <= maxZ + EPSILON && pointInPolygon({ x: p.x, y: p.y }, obstacle.footprint)) return true;
-    }
-  }
+  const insideAt = (t: number) => {
+    const p = add(origin, scale(direction, t));
+    return p.z >= minZ - EPSILON && p.z <= maxZ + EPSILON && pointInPolygon({ x: p.x, y: p.y }, obstacle.footprint);
+  };
 
+  if (unique.some((t) => t >= 0 && t <= maxDistance && insideAt(t))) return true;
   for (let i = 0; i + 1 < unique.length; i++) {
     const mid = (unique[i] + unique[i + 1]) / 2;
-    if (mid < 0 || mid > maxDistance) continue;
-    const p = add(origin, scale(direction, mid));
-    if (p.z >= minZ - EPSILON && p.z <= maxZ + EPSILON && pointInPolygon({ x: p.x, y: p.y }, obstacle.footprint)) return true;
+    if (mid >= 0 && mid <= maxDistance && insideAt(mid)) return true;
   }
-
   return false;
 }
 
@@ -138,7 +130,10 @@ function panelSamplePoints(panel: SolarPanelSpec, placement: PanelPlacement, pla
   const width = placement.rotation % 180 === 0 ? panel.widthM : panel.lengthM;
   const length = placement.rotation % 180 === 0 ? panel.lengthM : panel.widthM;
   const basis = roofBasis(plane);
-  const center = add(basis.origin, add(scale(basis.crossSlope, placement.center.x - basis.origin.x), scale(basis.slope, placement.center.y - basis.origin.y)));
+  const center = add(
+    basis.origin,
+    add(scale(basis.crossSlope, placement.center.x - basis.origin.x), scale(basis.slope, placement.center.y - basis.origin.y)),
+  );
   const points: Vector3[] = [];
   for (let ix = 0; ix < samplesX; ix++) {
     const u = ((ix + 0.5) / samplesX - 0.5) * width;
@@ -174,19 +169,18 @@ export function calculatePanelShadeFraction(
 export function calculateShadeFractions(
   panel: SolarPanelSpec,
   placements: PanelPlacement[],
-  planeById: (id: string | undefined) => RoofPlane | undefined,
+  planeByPlacementId: (placementId: string) => RoofPlane | undefined,
   sunVector: Vector3,
   obstacles: RoofObstaclePrism[],
   options: OcclusionOptions = {},
 ): Map<string, number> {
   const result = new Map<string, number>();
   for (const placement of placements) {
-    const plane = planeById(placement.panelId);
-    if (!plane) {
-      result.set(placement.id, 0);
-      continue;
-    }
-    result.set(placement.id, calculatePanelShadeFraction(panel, placement, plane, sunVector, obstacles, options));
+    const plane = planeByPlacementId(placement.id);
+    result.set(
+      placement.id,
+      plane ? calculatePanelShadeFraction(panel, placement, plane, sunVector, obstacles, options) : 0,
+    );
   }
   return result;
 }
