@@ -1,4 +1,6 @@
 import type { Point } from "@/engine/geometry/point";
+import type { UsableRoofRegion } from "@/engine/geometry/roof-constraints";
+import { isPolygonUsable } from "@/engine/geometry/roof-constraints";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import type { PanelPlacement } from "@/engine/solar/placement";
 import { validatePanelPlacement } from "@/engine/solar/roof-validation";
@@ -28,11 +30,18 @@ function regionAllowsPanel(center: Point, width: number, length: number, region:
   return samples.every((p) => regionContainsPoint(p, region.outer) && !(region.holes ?? []).some((hole) => regionContainsPoint(p, hole)));
 }
 
-function generateForRegion(region: LayoutRoofRegion, panel: SolarPanelSpec, constraints: LayoutConstraints, existingPlacements: PanelPlacement[], idOffset: number): LayoutCandidate[] {
+function generateForRegion(
+  region: LayoutRoofRegion,
+  panel: SolarPanelSpec,
+  constraints: LayoutConstraints,
+  existingPlacements: PanelPlacement[],
+  idOffset: number,
+  canonicalRegion?: UsableRoofRegion,
+): LayoutCandidate[] {
   const b = polygonBounds(region.outer);
   const candidates: LayoutCandidate[] = [];
   const rotations = constraints.allowedRotations ?? [0, 90];
-  const edge = constraints.edgeGapM ?? constraints.setbackM ?? 0;
+  const edge = canonicalRegion ? 0 : (constraints.edgeGapM ?? constraints.setbackM ?? 0);
   const gap = constraints.panelGapM ?? 0;
 
   for (const rotation of rotations) {
@@ -45,8 +54,19 @@ function generateForRegion(region: LayoutRoofRegion, panel: SolarPanelSpec, cons
       for (const interval of intervals) {
         for (let x = interval.minX + edge + width / 2; x <= interval.maxX - edge - width / 2 + 1e-9; x += stepX) {
           const placement: PanelPlacement = { id: `layout-${idOffset + candidates.length + 1}`, panelId: panel.id, center: { x, y }, rotation: rotation as 0 | 90 | 180 | 270 };
-          const insideRegion = regionAllowsPanel(placement.center, width + edge * 2, length + edge * 2, region);
-          const result = insideRegion ? validatePanelPlacement(region.outer, placement, panel, { northM: edge, eastM: edge, southM: edge, westM: edge }, existingPlacements) : { valid: false };
+          const corners = [
+            { x: x - width / 2, y: y - length / 2 },
+            { x: x + width / 2, y: y - length / 2 },
+            { x: x + width / 2, y: y + length / 2 },
+            { x: x - width / 2, y: y + length / 2 },
+          ];
+          const canonicalValid = canonicalRegion ? isPolygonUsable(corners, canonicalRegion) : false;
+          const insideRegion = canonicalRegion
+            ? canonicalValid
+            : regionAllowsPanel(placement.center, width + edge * 2, length + edge * 2, region);
+          const result = insideRegion
+            ? validatePanelPlacement(region.outer, placement, panel, { northM: edge, eastM: edge, southM: edge, westM: edge }, existingPlacements)
+            : { valid: false, reasons: ["Panel footprint violates canonical roof constraints"] };
           const blocker = result.valid ? findBlockingObstacle(panelFootprint(placement.center, width, length, rotation), constraints.obstacles) : undefined;
           const valid = result.valid && !blocker;
           candidates.push({ placement, valid, score: valid ? panel.powerWatts : -Infinity, blockedByObstacleId: blocker?.id, roofPlaneId: region.roofPlaneId });
@@ -57,7 +77,29 @@ function generateForRegion(region: LayoutRoofRegion, panel: SolarPanelSpec, cons
   return candidates;
 }
 
-export function generateLayoutCandidates(roof: Point[], panel: SolarPanelSpec, constraints: LayoutConstraints = {}, existingPlacements: PanelPlacement[] = [], roofRegions?: LayoutRoofRegion[], roofPlanes?: RoofPlane[]): LayoutCandidate[] {
-  const regions = roofRegions?.length ? roofRegions : roofPlanes?.length ? roofPlanes.map((plane) => ({ outer: plane.polygon, roofPlaneId: plane.id })) : [{ outer: roof }];
-  return regions.flatMap((region, index) => generateForRegion(region, panel, constraints, existingPlacements, index * 100000));
+export function generateLayoutCandidates(
+  roof: Point[],
+  panel: SolarPanelSpec,
+  constraints: LayoutConstraints = {},
+  existingPlacements: PanelPlacement[] = [],
+  roofRegions?: LayoutRoofRegion[],
+  roofPlanes?: RoofPlane[],
+  usableRoofRegions?: UsableRoofRegion[],
+): LayoutCandidate[] {
+  const canonical = usableRoofRegions?.length ? usableRoofRegions : undefined;
+  const regions = canonical
+    ? canonical.map((region) => ({ outer: region.roof }))
+    : roofRegions?.length
+      ? roofRegions
+      : roofPlanes?.length
+        ? roofPlanes.map((plane) => ({ outer: plane.polygon, roofPlaneId: plane.id }))
+        : [{ outer: roof }];
+  return regions.flatMap((region, index) => generateForRegion(
+    region,
+    panel,
+    constraints,
+    existingPlacements,
+    index * 100000,
+    canonical?.[index],
+  ));
 }
