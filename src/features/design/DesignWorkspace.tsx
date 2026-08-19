@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPlacementPreview } from "@/engine/solar/placement-preview";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import type { PanelPlacement as EnginePlacement } from "@/engine/solar/placement";
+import { calculateAnnualProduction } from "@/engine/solar/production/annual-production";
 import { generateLayout, type GenerateLayoutResponse } from "@/features/auto-layout/api";
 import { useDesignEditorStore } from "./editor-store";
 import type { DesignTool, Point2D } from "./types";
@@ -58,6 +59,7 @@ export function DesignWorkspace({ projectId, designVersionId = "current", roofId
   const [orientation, setOrientation] = useState<"auto" | "portrait" | "landscape">("auto");
   const enginePanels = useMemo(() => panels.map(toEngine), [panels]);
   const panelById = useCallback((id: string) => id === PANEL.id ? PANEL : undefined, []);
+  const production = useMemo(() => calculateAnnualProduction({ panelCount: panels.length, panelPowerWatts: PANEL.powerWatts }), [panels.length]);
 
   const getPreview = useCallback((center: Point2D, rotation: 0 | 90 | 180 | 270, ignoreId?: string) => {
     const existing = enginePanels.filter((panel) => panel.id !== ignoreId);
@@ -108,7 +110,6 @@ export function DesignWorkspace({ projectId, designVersionId = "current", roofId
   const acceptLayout = useCallback(() => {
     if (!layoutResult) return;
     const generated = responseToPanels(layoutResult);
-    // Replace is intentionally implemented through the existing editor actions to keep manual editing semantics intact.
     panels.forEach((panel) => removePanel(panel.id));
     generated.forEach((panel) => addPanel(panel));
     setLayoutOpen(false);
@@ -146,7 +147,37 @@ export function DesignWorkspace({ projectId, designVersionId = "current", roofId
           <div className="stage-controls"><button onClick={() => setZoom(zoom - .25)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(zoom + .25)}>+</button></div>
           {activeTool === "panel" && <div style={{ position: "absolute", left: 16, bottom: 16, fontSize: 12 }}>{preview?.valid ? "Valid placement · click to place" : "Invalid placement · move onto usable roof"}</div>}
         </section>
-        <aside className="design-properties"><span className="toolbar-title">PROPERTIES</span><h3>Design</h3><div className="property"><span>Tool</span><strong>{activeTool}</strong></div><div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>{selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}<hr/><h3>System</h3><div className="metric"><strong>{panels.length}</strong><span>Panels</span></div><div className="metric"><strong>{capacity.toFixed(1)} kWp</strong><span>Capacity</span></div><div className="metric"><strong>60 m²</strong><span>Roof area</span></div></aside>
+        <aside className="design-properties">
+          <span className="toolbar-title">PROPERTIES</span>
+          <h3>Design</h3>
+          <div className="property"><span>Tool</span><strong>{activeTool}</strong></div>
+          <div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>
+          {selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}
+          <hr/>
+          <h3>System</h3>
+          <div className="metric"><strong>{panels.length}</strong><span>Panels</span></div>
+          <div className="metric"><strong>{capacity.toFixed(1)} kWp</strong><span>Capacity</span></div>
+          <div className="metric"><strong>60 m²</strong><span>Roof area</span></div>
+          <section aria-labelledby="production-heading" style={{ marginTop: 18, padding: 14, border: "1px solid currentColor", borderRadius: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <h3 id="production-heading" style={{ margin: 0 }}>Production</h3>
+              <span style={{ fontSize: 11, padding: "3px 7px", borderRadius: 999, background: "rgba(180,120,0,.14)" }}>Reference</span>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 26, fontWeight: 700 }}>{production.annualKwh.toFixed(0)} <span style={{ fontSize: 13, fontWeight: 500 }}>kWh/year</span></div>
+            <div style={{ marginTop: 8, fontSize: 12, opacity: .72 }}>Based on {production.dcCapacityKwp.toFixed(1)} kWp DC, {Math.round(production.performanceRatio * 100)}% PR and {production.specificYieldKwhPerKwp.toLocaleString()} kWh/kWp reference yield.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+              <div><strong>{production.shadingLossPct.toFixed(0)}%</strong><small style={{ display: "block", opacity: .6 }}>Shading loss</small></div>
+              <div><strong>12 months</strong><small style={{ display: "block", opacity: .6 }}>Monthly profile</small></div>
+            </div>
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12 }}>Monthly production</summary>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginTop: 10, fontSize: 11 }}>
+                {production.monthlyKwh.map((value, index) => <div key={index}><strong>{value.toFixed(0)}</strong><span style={{ display: "block", opacity: .55 }}>{["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][index]}</span></div>)}
+              </div>
+            </details>
+            {production.warnings.length > 0 && <div role="note" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "rgba(180,120,0,.10)", fontSize: 11 }}><strong>Estimate limitation</strong><ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{production.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
+          </section>
+        </aside>
       </div>
       {layoutOpen && <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.42)", display: "grid", placeItems: "center", padding: 24 }}>
         <div style={{ width: "min(520px, 100%)", background: "var(--panel, #fff)", borderRadius: 16, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,.25)" }}>
