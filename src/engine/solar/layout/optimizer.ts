@@ -10,6 +10,7 @@ export function generateSolarLayout(request: LayoutRequest): SolarLayoutResult {
     request.existingPlacements,
     request.roofRegions,
     request.roofPlanes,
+    request.usableRoofRegions,
   );
   const valid = candidates.filter((candidate) => candidate.valid);
   const placements = valid.map((candidate) => candidate.placement);
