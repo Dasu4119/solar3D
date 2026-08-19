@@ -1,0 +1,62 @@
+export const GOLDEN_DESIGN = {
+  id: "golden-flat-roof-20kw",
+  version: 1,
+  geometrySchemaVersion: 1,
+  roof: {
+    type: "Polygon" as const,
+    coordinates: [[[0, 0], [20, 0], [20, 10], [0, 10], [0, 0]]],
+    elevationM: 5,
+    pitchDegrees: 0,
+    azimuthDegrees: 180,
+  },
+  module: {
+    manufacturer: "Golden Test",
+    model: "GT-450",
+    powerW: 450,
+    lengthM: 2.094,
+    widthM: 1.134,
+    vocV: 49.5,
+    vmpV: 41.5,
+    iscA: 11.5,
+    impA: 10.85,
+  },
+  layout: {
+    panelCount: 40,
+    setbackM: 0.5,
+    panelSpacingM: 0.02,
+    rowSpacingM: 0.25,
+  },
+  inverter: {
+    manufacturer: "Golden Test",
+    model: "GTI-20K",
+    ratedPowerKw: 20,
+    maxDcPowerKw: 30,
+    maxVoltageV: 1100,
+    mpptMinVoltageV: 200,
+    mpptMaxVoltageV: 1000,
+    mpptCount: 2,
+    maxCurrentA: 30,
+    efficiencyPercent: 98.5,
+  },
+  electrical: {
+    stringCount: 2,
+    panelsPerString: 20,
+    mpptNumbers: [1, 2],
+    coldTempC: -10,
+    hotTempC: 70,
+  },
+  production: {
+    performanceRatio: 0.82,
+    annualSpecificYieldKwhPerKwp: 1400,
+    shadedEnergyFraction: 0.05,
+  },
+} as const;
+
+export const GOLDEN_EXPECTED = {
+  dcCapacityKwp: 18,
+  annualKwh: 19454.4,
+  shadingLossPct: 5,
+  performanceRatio: 0.82,
+  specificYieldKwhPerKwp: 1400,
+  monthlyKwh: [1459.08, 1361.808, 1556.352, 1653.624, 1750.896, 1848.168, 1945.44, 1945.44, 1750.896, 1653.624, 1361.808, 1167.264],
+} as const;
