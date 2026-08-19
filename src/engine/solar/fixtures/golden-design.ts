@@ -54,9 +54,9 @@ export const GOLDEN_DESIGN = {
 
 export const GOLDEN_EXPECTED = {
   dcCapacityKwp: 18,
-  annualKwh: 19454.4,
+  annualKwh: 19630.8,
   shadingLossPct: 5,
   performanceRatio: 0.82,
   specificYieldKwhPerKwp: 1400,
-  monthlyKwh: [1459.08, 1361.808, 1556.352, 1653.624, 1750.896, 1848.168, 1945.44, 1945.44, 1750.896, 1653.624, 1361.808, 1167.264],
+  monthlyKwh: [1472.31, 1374.156, 1570.464, 1668.618, 1766.772, 1864.926, 1963.08, 1963.08, 1766.772, 1668.618, 1374.156, 1177.848],
 } as const;
