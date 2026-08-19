@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GOLDEN_DESIGN, GOLDEN_EXPECTED } from "./golden-design";
 import { calculateAnnualProduction } from "../production/annual-production";
+import { engineeringEnergyEqual } from "../precision/engineering-precision";
 
 describe("P0.11 golden acceptance regression", () => {
   it("matches the engineering acceptance prerequisites", () => {
@@ -27,7 +28,7 @@ describe("P0.11 golden acceptance regression", () => {
     expect(GOLDEN_DESIGN.module.impA).toBeLessThan(GOLDEN_DESIGN.inverter.maxCurrentA);
   });
 
-  it("locks the production output used by the acceptance fixture", () => {
+  it("locks the production output using the engineering precision policy", () => {
     const result = calculateAnnualProduction({
       panelCount: GOLDEN_DESIGN.layout.panelCount,
       panelPowerWatts: GOLDEN_DESIGN.module.powerW,
@@ -36,14 +37,15 @@ describe("P0.11 golden acceptance regression", () => {
       shadedEnergyFraction: GOLDEN_DESIGN.production.shadedEnergyFraction,
     });
 
-    expect(result).toMatchObject({
-      dcCapacityKwp: GOLDEN_EXPECTED.dcCapacityKwp,
-      annualKwh: GOLDEN_EXPECTED.annualKwh,
-      shadingLossPct: GOLDEN_EXPECTED.shadingLossPct,
-      performanceRatio: GOLDEN_EXPECTED.performanceRatio,
-      specificYieldKwhPerKwp: GOLDEN_EXPECTED.specificYieldKwhPerKwp,
-      monthlyKwh: GOLDEN_EXPECTED.monthlyKwh,
-      warnings: [],
+    expect(result.dcCapacityKwp).toBe(GOLDEN_EXPECTED.dcCapacityKwp);
+    expect(engineeringEnergyEqual(result.annualKwh, GOLDEN_EXPECTED.annualKwh)).toBe(true);
+    expect(result.shadingLossPct).toBe(GOLDEN_EXPECTED.shadingLossPct);
+    expect(result.performanceRatio).toBe(GOLDEN_EXPECTED.performanceRatio);
+    expect(result.specificYieldKwhPerKwp).toBe(GOLDEN_EXPECTED.specificYieldKwhPerKwp);
+    expect(result.monthlyKwh).toHaveLength(GOLDEN_EXPECTED.monthlyKwh.length);
+    result.monthlyKwh.forEach((value, index) => {
+      expect(engineeringEnergyEqual(value, GOLDEN_EXPECTED.monthlyKwh[index])).toBe(true);
     });
+    expect(result.warnings).toEqual([]);
   });
 });
