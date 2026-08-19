@@ -11,9 +11,18 @@ on:
       - 'playwright.config.*'
       - '.github/workflows/e2e.yml'
       - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'npm-shrinkwrap.json'
-      - 'package-lock.json'
+  push:
+    branches:
+      - 'feat/p1e3-dashboard-production'
+    paths:
+      - 'e2e/**'
+      - 'src/shared/api/**'
+      - 'src/engine/**'
+      - 'features/design/**'
+      - 'vitest.config.*'
+      - 'playwright.config.*'
+      - '.github/workflows/e2e.yml'
+      - 'package.json'
   workflow_dispatch:
 
 jobs:
@@ -25,15 +34,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      - name: Install Chromium browser binary
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
       - name: Run persistence unit tests
         run: npm run test:unit -- src/shared/api/__tests__/design-persistence-roof.test.ts
+
       - name: Run production heatmap unit tests
         run: npm run test:unit -- features/design/production-heatmap.test.ts
+
       - name: Run annual production engine unit tests
         run: npm run test:unit -- src/engine/solar/production/annual-production.test.ts
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+
+      - name: Run dashboard production adapter tests
+        run: npm run test:unit -- src/app/dashboard/production-metrics.test.ts
+
       - name: Run persistence E2E
         env:
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}

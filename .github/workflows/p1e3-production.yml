@@ -1,0 +1,26 @@
+name: P1-E3 Production Adapter
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/app/dashboard/production-metrics.*'
+      - 'src/engine/solar/production/**'
+      - '.github/workflows/p1e3-production.yml'
+      - 'package.json'
+  workflow_dispatch:
+
+jobs:
+  production-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Run production engine tests
+        run: npm run test:unit -- src/engine/solar/production/annual-production.test.ts
+      - name: Run dashboard production adapter tests
+        run: npm run test:unit -- src/app/dashboard/production-metrics.test.ts
