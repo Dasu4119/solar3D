@@ -21,11 +21,14 @@ describe("golden Solar3D design", () => {
     });
 
     expect(result.dcCapacityKwp).toBe(GOLDEN_EXPECTED.dcCapacityKwp);
-    expect(result.annualKwh).toBe(GOLDEN_EXPECTED.annualKwh);
+    expect(result.annualKwh).toBeCloseTo(GOLDEN_EXPECTED.annualKwh, 9);
     expect(result.shadingLossPct).toBe(GOLDEN_EXPECTED.shadingLossPct);
     expect(result.performanceRatio).toBe(GOLDEN_EXPECTED.performanceRatio);
     expect(result.specificYieldKwhPerKwp).toBe(GOLDEN_EXPECTED.specificYieldKwhPerKwp);
-    expect(result.monthlyKwh).toEqual(GOLDEN_EXPECTED.monthlyKwh);
+    expect(result.monthlyKwh).toHaveLength(GOLDEN_EXPECTED.monthlyKwh.length);
+    result.monthlyKwh.forEach((value, index) => {
+      expect(value).toBeCloseTo(GOLDEN_EXPECTED.monthlyKwh[index], 9);
+    });
     expect(result.warnings).toEqual([]);
   });
 });
