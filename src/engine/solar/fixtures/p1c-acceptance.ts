@@ -37,7 +37,7 @@ export const P1C_ROOF_REGIONS = [
     { x: 5, y: 10 },
     { x: 0, y: 10 },
   ],
-] as const;
+];
 
 export const P1C_OBSTACLES: RoofObstacle[] = [
   {
