@@ -1,6 +1,7 @@
 import type { Point } from "@/engine/geometry/point";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import type { PanelPlacement } from "@/engine/solar/placement";
+import type { UsableRoofRegion } from "@/engine/geometry/roof-constraints";
 import type { RoofPlane } from "./roof-planes";
 
 export interface LayoutObstacle {
@@ -26,6 +27,8 @@ export interface LayoutConstraints {
 export interface LayoutRequest {
   roof: Point[];
   roofRegions?: LayoutRoofRegion[];
+  /** Canonical P1-B physical constraint output. Prefer this over legacy holes/obstacles. */
+  usableRoofRegions?: UsableRoofRegion[];
   roofPlanes?: RoofPlane[];
   panel: SolarPanelSpec;
   constraints?: LayoutConstraints;
