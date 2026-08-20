@@ -5,7 +5,7 @@ import { generateLayoutCandidates } from "@/engine/solar/layout/generator";
 import { calculateAnnualProduction } from "@/engine/solar/production/annual-production";
 import { engineeringEnergyEqual } from "@/engine/solar/precision/engineering-precision";
 import { ApiDesignPersistence, type DesignPersistenceSnapshot } from "@/shared/api/design-persistence";
-import { P1C_OBSTACLES, P1C_PANEL, P1C_PRODUCTION_INPUT, P1C_ROOF_MESH, P1C_ROOF_REGIONS } from "./p1c-acceptance";
+import { P1C_LAYOUT_OBSTACLES, P1C_PANEL, P1C_PRODUCTION_INPUT, P1C_ROOF_MESH, P1C_ROOF_REGIONS, P1C_OBSTACLES } from "./p1c-acceptance";
 
 describe("P1-C end-to-end 3D-to-production acceptance", () => {
   it("keeps the complete deterministic pipeline coherent", async () => {
@@ -27,7 +27,7 @@ describe("P1-C end-to-end 3D-to-production acceptance", () => {
     }, [], undefined, undefined, [leftRegion]);
     const rightCandidates = generateLayoutCandidates(P1C_ROOF_REGIONS[1], P1C_PANEL, {
       allowedRotations: [0, 90],
-      obstacles: P1C_OBSTACLES,
+      obstacles: P1C_LAYOUT_OBSTACLES,
     }, [], [{ outer: P1C_ROOF_REGIONS[1] }], undefined, [rightRegion]);
 
     const validPlacements = [...leftCandidates, ...rightCandidates]
