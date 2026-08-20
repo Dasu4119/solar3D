@@ -25,9 +25,10 @@ describe("P1-C end-to-end 3D-to-production acceptance", () => {
     const leftCandidates = generateLayoutCandidates(leftRegion.roof, P1C_PANEL, {
       allowedRotations: [0, 90],
     }, [], undefined, undefined, [leftRegion]);
-    const rightCandidates = generateLayoutCandidates(rightRegion.roof, P1C_PANEL, {
+    const rightCandidates = generateLayoutCandidates(P1C_ROOF_REGIONS[1], P1C_PANEL, {
       allowedRotations: [0, 90],
-    }, [], undefined, undefined, [rightRegion]);
+      obstacles: P1C_OBSTACLES,
+    }, [], [{ outer: P1C_ROOF_REGIONS[1] }], undefined, [rightRegion]);
 
     const validPlacements = [...leftCandidates, ...rightCandidates]
       .filter((candidate) => candidate.valid)
