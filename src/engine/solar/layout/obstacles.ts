@@ -7,8 +7,7 @@ type Bounds = { minX: number; maxX: number; minY: number; maxY: number };
 
 function bounds(points: Point[]): Bounds {
   return points.reduce((b, p) => ({
-    minX: Math.min(b.minX, p.x), maxX: Math.max(b.maxX, p.x),
-    minY: Math.min(b.minY, p.y), maxY: Math.max(b.maxY, p.y),
+    minX: Math.min(b.minX, p.x), maxX: Math.max(b.maxX, p.x), minY: Math.min(b.minY, p.y), maxY: Math.max(b.maxY, p.y),
   }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
 }
 
@@ -52,7 +51,9 @@ function segmentsIntersect(a: Point, b: Point, c: Point, d: Point): boolean {
 }
 
 function polygonsIntersect(a: Point[], b: Point[]): boolean {
-  if (!a.length || !b.length) return false;
+  // Geometry functions are defensive at their boundary: malformed or degenerate
+  // polygons cannot block a panel and must never crash the layout engine.
+  if (a.length < 3 || b.length < 3) return false;
   const ba = bounds(a);
   const bb = bounds(b);
   if (ba.maxX < bb.minX || bb.maxX < ba.minX || ba.maxY < bb.minY || bb.maxY < ba.minY) return false;
@@ -66,9 +67,11 @@ function polygonsIntersect(a: Point[], b: Point[]): boolean {
 }
 
 function expandObstacle(obstacle: LayoutObstacle): Point[] {
+  const polygon = Array.isArray(obstacle.polygon) ? obstacle.polygon : [];
+  if (polygon.length < 3) return [];
   const clearance = obstacle.clearanceM ?? 0;
-  if (clearance <= 0) return obstacle.polygon;
-  const b = bounds(obstacle.polygon);
+  if (clearance <= 0) return polygon;
+  const b = bounds(polygon);
   return [
     { x: b.minX - clearance, y: b.minY - clearance },
     { x: b.maxX + clearance, y: b.minY - clearance },
