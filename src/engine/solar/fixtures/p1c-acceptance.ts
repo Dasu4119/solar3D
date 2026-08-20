@@ -1,6 +1,7 @@
 import type { RoofMesh } from "@/engine/roof/plane-extraction";
 import type { RoofObstacle } from "@/engine/geometry/roof-constraints";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
+import type { LayoutObstacle } from "@/engine/solar/layout/types";
 
 /**
  * Deterministic two-plane gable roof used by the P1-C acceptance test.
@@ -52,6 +53,13 @@ export const P1C_OBSTACLES: RoofObstacle[] = [
     heightM: 1.2,
   },
 ];
+
+/** Canonical layout-engine obstacle contract derived from the roof constraint model. */
+export const P1C_LAYOUT_OBSTACLES: LayoutObstacle[] = P1C_OBSTACLES.map((obstacle) => ({
+  id: obstacle.id,
+  polygon: obstacle.footprint,
+  clearanceM: 0,
+}));
 
 export const P1C_PANEL: SolarPanelSpec = {
   id: "p1c-400w",
