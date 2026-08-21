@@ -1,4 +1,5 @@
 import { calculateAnnualProduction } from "../production/annual-production";
+import { calculateFinancialValue } from "../production/financial-model";
 import { generateLayoutCandidates } from "./generator";
 import { analyzeRoofPlane } from "./roof-planes";
 import type { LayoutCandidate, LayoutRequest, SolarLayoutResult } from "./types";
@@ -11,7 +12,6 @@ function angularDistanceDeg(a: number, b: number): number {
 
 function orientationFactor(actual: number, preferred: number | undefined): number {
   if (preferred == null || !Number.isFinite(preferred)) return 1;
-  // Bounded heuristic for layout ranking; this is not a bankable irradiance model.
   return 0.55 + 0.45 * Math.max(0, Math.cos(angularDistanceDeg(actual, preferred) * DEG_TO_RAD));
 }
 
@@ -39,8 +39,26 @@ function estimateGroupAnnualKwh(group: LayoutCandidate[], request: LayoutRequest
   return production.annualKwh * yieldFactor;
 }
 
-function selectProductionOptimalCandidates(candidates: LayoutCandidate[], request: LayoutRequest): LayoutCandidate[] {
-  if (!request.productionObjective) return candidates.filter((candidate) => candidate.valid);
+function estimateGroupFinancialNpv(group: LayoutCandidate[], request: LayoutRequest): number {
+  const financial = request.financialObjective;
+  if (!financial) return -Infinity;
+  const annualKwh = estimateGroupAnnualKwh(group, request);
+  const variableCost = Math.max(0, financial.systemCostUsdPerWatt ?? 0) * group.length * request.panel.powerWatts;
+  const fixedCost = Math.max(0, financial.systemCostUsd ?? 0);
+  return calculateFinancialValue({
+    annualKwh,
+    systemCostUsd: fixedCost + variableCost,
+    electricityRateUsdPerKwh: financial.electricityRateUsdPerKwh,
+    annualOpexUsd: financial.annualOpexUsd,
+    incentiveUsd: financial.incentiveUsd,
+    annualDegradationRate: financial.annualDegradationRate,
+    analysisYears: financial.analysisYears,
+    discountRate: financial.discountRate,
+  }).npvUsd;
+}
+
+function selectOptimalCandidates(candidates: LayoutCandidate[], request: LayoutRequest): LayoutCandidate[] {
+  if (!request.productionObjective && !request.financialObjective) return candidates.filter((candidate) => candidate.valid);
 
   const groups = new Map<string, LayoutCandidate[]>();
   for (const candidate of candidates) {
@@ -62,11 +80,15 @@ function selectProductionOptimalCandidates(candidates: LayoutCandidate[], reques
   const selected: LayoutCandidate[] = [];
   for (const regionGroups of byRegion.values()) {
     let bestGroup: LayoutCandidate[] | undefined;
-    let bestKwh = -Infinity;
+    let bestScore = -Infinity;
     for (const group of regionGroups) {
-      const kwh = estimateGroupAnnualKwh(group, request);
-      if (kwh > bestKwh || (Math.abs(kwh - bestKwh) < 1e-9 && group[0].placement.rotation < (bestGroup?.[0]?.placement.rotation ?? Infinity))) {
-        bestKwh = kwh;
+      const score = request.financialObjective
+        ? estimateGroupFinancialNpv(group, request)
+        : estimateGroupAnnualKwh(group, request);
+      const rotation = group[0]?.placement.rotation ?? Infinity;
+      const bestRotation = bestGroup?.[0]?.placement.rotation ?? Infinity;
+      if (score > bestScore || (Math.abs(score - bestScore) < 1e-9 && rotation < bestRotation)) {
+        bestScore = score;
         bestGroup = group;
       }
     }
@@ -85,12 +107,13 @@ export function generateSolarLayout(request: LayoutRequest): SolarLayoutResult {
     request.roofPlanes,
     request.usableRoofRegions,
   );
-  const valid = selectProductionOptimalCandidates(candidates, request);
+  const valid = selectOptimalCandidates(candidates, request);
   const placements = valid.map((candidate) => candidate.placement);
-  const groupKeys = request.productionObjective
+  const hasValueObjective = Boolean(request.productionObjective || request.financialObjective);
+  const groupKeys = hasValueObjective
     ? [...new Set(valid.map((candidate) => `${candidate.regionKey ?? candidate.roofPlaneId ?? "region"}|${candidate.placement.rotation}`))]
     : [];
-  const estimatedAnnualKwh = request.productionObjective
+  const estimatedAnnualKwh = hasValueObjective
     ? groupKeys.reduce((sum, key) => {
         const [regionKey, rotation] = key.split("|");
         const group = valid.filter((candidate) =>
@@ -100,11 +123,45 @@ export function generateSolarLayout(request: LayoutRequest): SolarLayoutResult {
         return sum + estimateGroupAnnualKwh(group, request);
       }, 0)
     : undefined;
+
+  const estimatedFinancial = request.financialObjective
+    ? calculateFinancialValue({
+        annualKwh: estimatedAnnualKwh ?? 0,
+        systemCostUsd: request.financialObjective.systemCostUsd,
+        systemCostUsdPerWatt: undefined,
+        electricityRateUsdPerKwh: request.financialObjective.electricityRateUsdPerKwh,
+        annualOpexUsd: request.financialObjective.annualOpexUsd,
+        incentiveUsd: request.financialObjective.incentiveUsd,
+        annualDegradationRate: request.financialObjective.annualDegradationRate,
+        analysisYears: request.financialObjective.analysisYears,
+        discountRate: request.financialObjective.discountRate,
+      })
+    : undefined;
+
+  const variableCost = request.financialObjective
+    ? Math.max(0, request.financialObjective.systemCostUsdPerWatt ?? 0) * placements.length * request.panel.powerWatts
+    : 0;
+  const fixedCost = request.financialObjective
+    ? Math.max(0, request.financialObjective.systemCostUsd ?? 0)
+    : 0;
+  const totalFinancial = request.financialObjective
+    ? calculateFinancialValue({
+        annualKwh: estimatedAnnualKwh ?? 0,
+        systemCostUsd: fixedCost + variableCost,
+        electricityRateUsdPerKwh: request.financialObjective.electricityRateUsdPerKwh,
+        annualOpexUsd: request.financialObjective.annualOpexUsd,
+        incentiveUsd: request.financialObjective.incentiveUsd,
+        annualDegradationRate: request.financialObjective.annualDegradationRate,
+        analysisYears: request.financialObjective.analysisYears,
+        discountRate: request.financialObjective.discountRate,
+      })
+    : estimatedFinancial;
+
   const planeSummaries = request.roofPlanes?.map((plane) => {
     const analysis = analyzeRoofPlane(plane);
     const planeCandidates = valid.filter((candidate) => candidate.roofPlaneId === plane.id);
     const count = planeCandidates.length;
-    const planeAnnualKwh = request.productionObjective && count > 0
+    const planeAnnualKwh = hasValueObjective && count > 0
       ? estimateGroupAnnualKwh(planeCandidates, request)
       : undefined;
     return {
@@ -116,12 +173,19 @@ export function generateSolarLayout(request: LayoutRequest): SolarLayoutResult {
       estimatedAnnualKwh: planeAnnualKwh,
     };
   });
+
   return {
     placements,
     candidateCount: candidates.length,
     dcCapacityWatts: placements.length * request.panel.powerWatts,
-    score: request.productionObjective ? estimatedAnnualKwh ?? 0 : placements.length * request.panel.powerWatts,
+    score: request.financialObjective
+      ? totalFinancial?.npvUsd ?? 0
+      : request.productionObjective
+        ? estimatedAnnualKwh ?? 0
+        : placements.length * request.panel.powerWatts,
     estimatedAnnualKwh,
+    estimatedNpvUsd: totalFinancial?.npvUsd,
+    estimatedPaybackYears: totalFinancial?.paybackYears,
     planeSummaries,
   };
 }
