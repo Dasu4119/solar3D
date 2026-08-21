@@ -24,6 +24,17 @@ export interface LayoutConstraints {
   obstacles?: LayoutObstacle[];
 }
 
+export interface LayoutProductionObjective {
+  /** Reference site-specific yield; the annual production engine supplies the calculation. */
+  annualSpecificYieldKwhPerKwp?: number;
+  performanceRatio?: number;
+  shadedEnergyFraction?: number;
+  /** Optional preferred panel azimuth used to distinguish otherwise equivalent rotations. */
+  preferredAzimuthDeg?: number;
+  /** Optional preferred roof pitch used to distinguish otherwise equivalent roof planes. */
+  preferredPitchDeg?: number;
+}
+
 export interface LayoutRequest {
   roof: Point[];
   roofRegions?: LayoutRoofRegion[];
@@ -32,6 +43,7 @@ export interface LayoutRequest {
   roofPlanes?: RoofPlane[];
   panel: SolarPanelSpec;
   constraints?: LayoutConstraints;
+  productionObjective?: LayoutProductionObjective;
   existingPlacements?: PanelPlacement[];
 }
 
@@ -41,6 +53,7 @@ export interface LayoutCandidate {
   score: number;
   blockedByObstacleId?: string;
   roofPlaneId?: string;
+  regionKey?: string;
 }
 
 export interface SolarLayoutResult {
@@ -48,11 +61,13 @@ export interface SolarLayoutResult {
   candidateCount: number;
   dcCapacityWatts: number;
   score: number;
+  estimatedAnnualKwh?: number;
   planeSummaries?: Array<{
     roofPlaneId: string;
     pitchDeg: number;
     azimuthDeg: number;
     placementCount: number;
     dcCapacityWatts: number;
+    estimatedAnnualKwh?: number;
   }>;
 }
