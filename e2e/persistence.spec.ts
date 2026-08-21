@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('design persistence and production acceptance', () => {
-  test('save → refresh → load preserves design and production state', async ({ page }) => {
+  test('save → refresh → load preserves design, production, and financial state', async ({ page }) => {
     const baseUrl = process.env.E2E_BASE_URL;
     const projectId = process.env.E2E_PROJECT_ID;
     test.skip(!baseUrl || !projectId || !process.env.E2E_STORAGE_STATE, 'Authenticated E2E environment is not configured');
@@ -19,6 +19,10 @@ test.describe('design persistence and production acceptance', () => {
     await expect(production.getByText(/kWh/)).toBeVisible();
     await expect(production.getByText(/Reference specific yield|Run annual simulation/i)).toBeVisible();
 
+    const financial = page.getByRole('region', { name: /financial summary/i });
+    await expect(financial).toBeVisible();
+    await expect(financial.getByTestId('financial-not-configured')).toBeVisible();
+
     const save = page.getByRole('button', { name: /save/i });
     await expect(save).toBeVisible();
     await save.click();
@@ -30,5 +34,7 @@ test.describe('design persistence and production acceptance', () => {
     const after = await state.getAttribute('data-state');
     expect(after).toBe(before);
     await expect(page.getByRole('region', { name: /solar production summary/i })).toBeVisible();
+    await expect(page.getByRole('region', { name: /financial summary/i })).toBeVisible();
+    await expect(page.getByTestId('financial-not-configured')).toBeVisible();
   });
 });
