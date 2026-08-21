@@ -36,6 +36,7 @@ function generateForRegion(
   constraints: LayoutConstraints,
   existingPlacements: PanelPlacement[],
   idOffset: number,
+  regionKey: string,
   canonicalRegion?: UsableRoofRegion,
 ): LayoutCandidate[] {
   const b = polygonBounds(region.outer);
@@ -73,7 +74,14 @@ function generateForRegion(
             ? validatePanelPlacement(region.outer, placement, panel, { northM: edge, eastM: edge, southM: edge, westM: edge }, existingPlacements)
             : { valid: false, reasons: ["Panel footprint violates canonical roof constraints"] };
           const valid = result.valid && !blocker;
-          candidates.push({ placement, valid, score: valid ? panel.powerWatts : -Infinity, blockedByObstacleId: blocker?.id, roofPlaneId: region.roofPlaneId });
+          candidates.push({
+            placement,
+            valid,
+            score: valid ? panel.powerWatts : -Infinity,
+            blockedByObstacleId: blocker?.id,
+            roofPlaneId: region.roofPlaneId,
+            regionKey,
+          });
         }
       }
     }
@@ -93,9 +101,6 @@ export function generateLayoutCandidates(
   const canonical = usableRoofRegions?.length ? usableRoofRegions : undefined;
   const regions = canonical
     ? canonical.map((region, index) => ({
-        // Generate candidates from the source roof polygon when supplied, while
-        // using the canonical region for validation. This lets obstacle-blocked
-        // candidates remain observable instead of being clipped away first.
         outer: roofRegions?.[index]?.outer ?? region.roof,
         holes: roofRegions?.[index]?.holes,
         roofPlaneId: roofRegions?.[index]?.roofPlaneId,
@@ -111,6 +116,7 @@ export function generateLayoutCandidates(
     constraints,
     existingPlacements,
     index * 100000,
+    region.roofPlaneId ?? `region-${index}`,
     canonical?.[index],
   ));
 }
