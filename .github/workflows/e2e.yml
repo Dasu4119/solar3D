@@ -6,6 +6,7 @@ on:
       - 'e2e/**'
       - 'src/shared/api/**'
       - 'src/engine/**'
+      - 'engine/solar/production/**'
       - 'features/design/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
@@ -19,6 +20,7 @@ on:
       - 'e2e/**'
       - 'src/shared/api/**'
       - 'src/engine/**'
+      - 'engine/solar/production/**'
       - 'features/design/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
@@ -58,6 +60,9 @@ jobs:
 
       - name: Run golden acceptance regression
         run: npm run test:unit -- src/engine/solar/fixtures/golden-acceptance.test.ts
+
+      - name: Run financial golden scenarios
+        run: npm run test:unit -- engine/solar/production/financial-golden-scenarios.test.ts
 
       - name: Run persistence unit tests
         run: npm run test:unit -- src/shared/api/__tests__/design-persistence-roof.test.ts
