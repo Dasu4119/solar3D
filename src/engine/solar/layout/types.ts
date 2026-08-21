@@ -35,6 +35,19 @@ export interface LayoutProductionObjective {
   preferredPitchDeg?: number;
 }
 
+export interface LayoutFinancialObjective {
+  /** Installed system cost used for NPV/payback ranking. */
+  systemCostUsd?: number;
+  /** Optional variable installed cost; multiplied by candidate DC watts. */
+  systemCostUsdPerWatt?: number;
+  electricityRateUsdPerKwh: number;
+  annualOpexUsd?: number;
+  incentiveUsd?: number;
+  annualDegradationRate?: number;
+  analysisYears?: number;
+  discountRate?: number;
+}
+
 export interface LayoutRequest {
   roof: Point[];
   roofRegions?: LayoutRoofRegion[];
@@ -44,6 +57,7 @@ export interface LayoutRequest {
   panel: SolarPanelSpec;
   constraints?: LayoutConstraints;
   productionObjective?: LayoutProductionObjective;
+  financialObjective?: LayoutFinancialObjective;
   existingPlacements?: PanelPlacement[];
 }
 
@@ -62,6 +76,8 @@ export interface SolarLayoutResult {
   dcCapacityWatts: number;
   score: number;
   estimatedAnnualKwh?: number;
+  estimatedNpvUsd?: number;
+  estimatedPaybackYears?: number;
   planeSummaries?: Array<{
     roofPlaneId: string;
     pitchDeg: number;
