@@ -33,6 +33,7 @@ export interface RoofExclusionZone {
 
 export interface UsableRoofRegion {
   roof: Polygon2D;
+  usableRoof: Polygon2D;
   exclusions: RoofExclusionZone[];
   edgeSetbackM: number;
 }
@@ -67,6 +68,78 @@ function distanceToPolygon(point: Point2D, polygon: Polygon2D): number {
     );
   }
   return Math.sqrt(minimum);
+}
+
+function polygonSignedArea(polygon: Polygon2D): number {
+  let area = 0;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const next = (index + 1) % polygon.length;
+    area += polygon[index].x * polygon[next].y - polygon[next].x * polygon[index].y;
+  }
+  return area / 2;
+}
+
+function lineIntersection(
+  firstStart: Point2D,
+  firstEnd: Point2D,
+  secondStart: Point2D,
+  secondEnd: Point2D,
+): Point2D | null {
+  const firstDx = firstEnd.x - firstStart.x;
+  const firstDy = firstEnd.y - firstStart.y;
+  const secondDx = secondEnd.x - secondStart.x;
+  const secondDy = secondEnd.y - secondStart.y;
+  const denominator = firstDx * secondDy - firstDy * secondDx;
+  if (Math.abs(denominator) <= EPSILON) return null;
+
+  const offsetX = secondStart.x - firstStart.x;
+  const offsetY = secondStart.y - firstStart.y;
+  const t = (offsetX * secondDy - offsetY * secondDx) / denominator;
+  return {
+    x: firstStart.x + t * firstDx,
+    y: firstStart.y + t * firstDy,
+  };
+}
+
+/**
+ * Computes a true inward polygon offset by moving each edge inward and
+ * intersecting adjacent offset lines. Works for rotated/non-axis-aligned
+ * simple polygons and preserves the source polygon when setback is zero.
+ */
+export function insetPolygon(polygon: Polygon2D, setbackM: number): Polygon2D {
+  if (polygon.length < 3 || setbackM <= EPSILON) return [...polygon];
+
+  const area = polygonSignedArea(polygon);
+  if (Math.abs(area) <= EPSILON) return [];
+  const ccw = area > 0;
+  const edges = polygon.map((start, index) => {
+    const end = polygon[(index + 1) % polygon.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= EPSILON) return null;
+    const inward = ccw ? { x: -dy / length, y: dx / length } : { x: dy / length, y: -dx / length };
+    const offset = { x: inward.x * setbackM, y: inward.y * setbackM };
+    return {
+      start: { x: start.x + offset.x, y: start.y + offset.y },
+      end: { x: end.x + offset.x, y: end.y + offset.y },
+    };
+  });
+
+  if (edges.some((edge) => edge === null)) return [];
+
+  const result: Polygon2D = [];
+  for (let index = 0; index < edges.length; index += 1) {
+    const previous = edges[(index - 1 + edges.length) % edges.length]!;
+    const current = edges[index]!;
+    const intersection = lineIntersection(previous.start, previous.end, current.start, current.end);
+    if (!intersection) return [];
+    result.push(intersection);
+  }
+
+  if (result.length < 3 || Math.abs(polygonSignedArea(result)) <= EPSILON) return [];
+  if (!result.every((point) => pointInPolygon(point, polygon))) return [];
+  return result;
 }
 
 function orientation(a: Point2D, b: Point2D, c: Point2D): number {
@@ -160,19 +233,21 @@ export function buildUsableRoofRegion(
   obstacles: RoofObstacle[] = [],
   rules: RoofSetbackRules = {},
 ): UsableRoofRegion {
-  if (roof.length < 3) return { roof: [], exclusions: [], edgeSetbackM: 0 };
+  if (roof.length < 3) return { roof: [], usableRoof: [], exclusions: [], edgeSetbackM: 0 };
 
   const edgeSetbackM = Math.max(0, rules.edgeM ?? 0);
+  const usableRoof = insetPolygon(roof, edgeSetbackM);
   return {
     roof: [...roof],
+    usableRoof,
     exclusions: buildRoofExclusions(roof, obstacles, rules),
     edgeSetbackM,
   };
 }
 
 export function isPointUsable(point: Point2D, region: UsableRoofRegion): boolean {
-  if (region.roof.length < 3 || !pointInPolygon(point, region.roof)) return false;
-  if (region.edgeSetbackM > 0 && distanceToPolygon(point, region.roof) < region.edgeSetbackM - EPSILON) return false;
+  const boundary = region.usableRoof.length >= 3 ? region.usableRoof : region.roof;
+  if (boundary.length < 3 || !pointInPolygon(point, boundary)) return false;
 
   return !region.exclusions.some((exclusion) => {
     if (pointInPolygon(point, exclusion.polygon)) return true;
@@ -185,9 +260,9 @@ export function isPolygonUsable(polygon: Polygon2D, region: UsableRoofRegion): b
   if (polygon.length < 3) return false;
   if (!polygon.every((point) => isPointUsable(point, region))) return false;
 
-  if (polygonEdgesIntersect(polygon, region.roof)) return false;
-  if (polygonBoundaryDistance(polygon, region.roof) < region.edgeSetbackM - EPSILON) return false;
-  if (polygonContainsPolygon(region.roof, polygon) === false) return false;
+  const boundary = region.usableRoof.length >= 3 ? region.usableRoof : region.roof;
+  if (polygonEdgesIntersect(polygon, boundary)) return false;
+  if (polygonContainsPolygon(boundary, polygon) === false) return false;
 
   return !region.exclusions.some((exclusion) => {
     if (polygonEdgesIntersect(polygon, exclusion.polygon)) return true;
@@ -197,7 +272,7 @@ export function isPolygonUsable(polygon: Polygon2D, region: UsableRoofRegion): b
 }
 
 export function hasUsableArea(region: UsableRoofRegion): boolean {
-  return region.roof.length >= 3;
+  return region.usableRoof.length >= 3;
 }
 
 export { EPSILON };
