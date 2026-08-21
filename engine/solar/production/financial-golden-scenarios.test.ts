@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateFinancialValue } from "./financial-model";
+import { calculateFinancialValue } from "../../../src/engine/solar/production/financial-model";
 
 describe("financial golden scenarios", () => {
   it("matches a financed residential baseline", () => {
