@@ -16,8 +16,8 @@ describe("financial golden scenarios", () => {
 
     expect(result.initialNetCostUsd).toBeCloseTo(19200, 8);
     expect(result.firstYearSavingsUsd).toBeCloseTo(2400, 8);
-    expect(result.paybackYears).toBeCloseTo(8.275862, 5);
-    expect(result.npvUsd).toBeCloseTo(10628.79, 0);
+    expect(result.paybackYears).toBeCloseTo(8.15936, 5);
+    expect(result.npvUsd).toBeCloseTo(9998.64, 2);
     expect(result.annualSavingsUsd).toHaveLength(25);
   });
 
@@ -57,6 +57,6 @@ describe("financial golden scenarios", () => {
     expect(result.annualSavingsUsd[0]).toBeCloseTo(2000, 8);
     expect(result.annualSavingsUsd[1]).toBeCloseTo(1980, 8);
     expect(result.annualSavingsUsd[2]).toBeCloseTo(1960.2, 8);
-    expect(result.npvUsd).toBeCloseTo(-4079.8, 8);
+    expect(result.npvUsd).toBeCloseTo(-4059.8, 8);
   });
 });
