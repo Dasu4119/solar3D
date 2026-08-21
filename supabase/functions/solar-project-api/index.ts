@@ -10,6 +10,21 @@ const cors = {
 
 const out = (x: unknown, s = 200) => new Response(JSON.stringify(x), { status: s, headers: cors });
 
+async function requireProjectAccess(db: any, userId: string, projectId: string) {
+  const { data: project, error: pe } = await db.from("projects").select("*").eq("id", projectId).single();
+  if (pe || !project) return null;
+  const { data: member, error: me } = await db.from("organization_members").select("role").eq("organization_id", project.organization_id).eq("user_id", userId).maybeSingle();
+  if (me || !member) return null;
+  return { project, role: member.role };
+}
+
+async function requireDesignAccess(db: any, userId: string, designId: string) {
+  const { data: design, error: de } = await db.from("designs").select("*").eq("id", designId).single();
+  if (de || !design) return null;
+  const access = await requireProjectAccess(db, userId, design.project_id);
+  return access ? { design, ...access } : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -24,16 +39,88 @@ Deno.serve(async (req) => {
     if (ue || !user) return out({ error: "Unauthorized" }, 401);
     const b = await req.json();
 
-    if (b.action === "get_design_for_project") {
+    if (b.action === "list") {
+      let organizationIds: string[] = [];
+      if (b.organization_id || b.organizationId) {
+        const orgId = b.organization_id ?? b.organizationId;
+        const { data: member, error: me } = await db.from("organization_members").select("organization_id").eq("organization_id", orgId).eq("user_id", user.id).maybeSingle();
+        if (me || !member) return out({ error: "Access denied" }, 403);
+        organizationIds = [orgId];
+      } else {
+        const { data: members, error: me } = await db.from("organization_members").select("organization_id").eq("user_id", user.id);
+        if (me) throw me;
+        organizationIds = (members ?? []).map((row: any) => row.organization_id);
+      }
+      if (!organizationIds.length) return out([]);
+      const { data: projects, error: pe } = await db.from("projects").select("*").in("organization_id", organizationIds).order("created_at", { ascending: false });
+      if (pe) throw pe;
+      return out(projects ?? []);
+    }
+
+    if (b.action === "get") {
+      const projectId = b.project_id ?? b.projectId;
+      if (!projectId) return out({ error: "project_id is required" }, 400);
+      const access = await requireProjectAccess(db, user.id, projectId);
+      if (!access) return out({ error: "Project not found or access denied" }, 404);
+      return out(access.project);
+    }
+
+    if (b.action === "sites") {
+      const projectId = b.project_id ?? b.projectId;
+      if (!projectId) return out({ error: "project_id is required" }, 400);
+      if (!await requireProjectAccess(db, user.id, projectId)) return out({ error: "Project not found or access denied" }, 404);
+      const { data: sites, error: se } = await db.from("sites").select("*").eq("project_id", projectId).order("created_at", { ascending: true });
+      if (se) throw se;
+      return out(sites ?? []);
+    }
+
+    if (b.action === "get_design_context") {
       if (!b.project_id) return out({ error: "project_id is required" }, 400);
+      const access = await requireProjectAccess(db, user.id, b.project_id);
+      if (!access) return out({ error: "Project not found or access denied" }, 404);
       const { data: design, error: de } = await db.from("designs").select("*").eq("project_id", b.project_id).order("created_at", { ascending: true }).limit(1).maybeSingle();
       if (de) throw de;
-      if (!design) return out({ success: true, design: null });
-      return out({ success: true, design });
+      if (!design) return out({ error: "No design exists for project" }, 404);
+      const { data: versions, error: ve } = await db.from("design_versions").select("*").eq("design_id", design.id).order("version_number", { ascending: false });
+      if (ve) throw ve;
+      const active = versions?.find((v: any) => v.id === design.active_version_id) ?? versions?.[0] ?? null;
+      const { data: roofs, error: re } = await db.from("roofs").select("*").eq("design_id", design.id).order("created_at", { ascending: true });
+      if (re) throw re;
+      let layouts: any[] = [];
+      if (active) {
+        const { data: l, error: le } = await db.from("panel_layouts").select("*").eq("design_version_id", active.id).order("created_at", { ascending: true });
+        if (le) throw le;
+        layouts = l ?? [];
+      }
+      const selectedLayout = layouts[0] ?? null;
+      const { data: defaults, error: de2 } = await db.from("solar_design_defaults").select("default_roof_geometry,setback_north_m,setback_east_m,setback_south_m,setback_west_m,default_module_id").eq("id", true).single();
+      if (de2) throw de2;
+      const moduleId = selectedLayout?.module_id ?? defaults.default_module_id;
+      const { data: module, error: me } = await db.from("solar_modules").select("id,manufacturer,model,power_w,efficiency_percent,length_m,width_m").eq("id", moduleId).eq("active", true).single();
+      if (me) throw me;
+      return out({
+        success: true,
+        project: access.project,
+        design,
+        active_version: active,
+        roofs: roofs ?? [],
+        layout: selectedLayout,
+        defaults: { roof: defaults.default_roof_geometry, setback: { northM: defaults.setback_north_m, eastM: defaults.setback_east_m, southM: defaults.setback_south_m, westM: defaults.setback_west_m } },
+        module: { id: module.id, manufacturer: module.manufacturer, model: module.model, widthM: Number(module.width_m), lengthM: Number(module.length_m), powerWatts: Number(module.power_w), efficiency: Number(module.efficiency_percent ?? 0) / 100 },
+      });
+    }
+
+    if (b.action === "get_design_for_project") {
+      if (!b.project_id) return out({ error: "project_id is required" }, 400);
+      if (!await requireProjectAccess(db, user.id, b.project_id)) return out({ error: "Project not found or access denied" }, 404);
+      const { data: design, error: de } = await db.from("designs").select("*").eq("project_id", b.project_id).order("created_at", { ascending: true }).limit(1).maybeSingle();
+      if (de) throw de;
+      return out({ success: true, design: design ?? null });
     }
 
     if (b.action === "get_design") {
       if (!b.design_id) return out({ error: "design_id is required" }, 400);
+      if (!await requireDesignAccess(db, user.id, b.design_id)) return out({ error: "Design not found or access denied" }, 404);
       const { data: design, error: de } = await db.from("designs").select("*").eq("id", b.design_id).single();
       if (de) throw de;
       const { data: versions, error: ve } = await db.from("design_versions").select("*").eq("design_id", b.design_id).order("version_number", { ascending: false });
@@ -41,8 +128,7 @@ Deno.serve(async (req) => {
       const active = versions?.find((v: any) => v.id === design.active_version_id) ?? versions?.[0] ?? null;
       const { data: roofs, error: re } = await db.from("roofs").select("*").eq("design_id", b.design_id);
       if (re) throw re;
-      let layouts: any[] = [];
-      let placements: any[] = [];
+      let layouts: any[] = [], placements: any[] = [];
       if (active) {
         const { data: l, error: le } = await db.from("panel_layouts").select("*").eq("design_version_id", active.id);
         if (le) throw le;
@@ -58,54 +144,44 @@ Deno.serve(async (req) => {
 
     if (b.action === "save_design") {
       if (!b.design_id) return out({ error: "design_id is required" }, 400);
+      const access = await requireDesignAccess(db, user.id, b.design_id);
+      if (!access) return out({ error: "Design not found or access denied" }, 404);
       const { data: last, error: le } = await db.from("design_versions").select("version_number").eq("design_id", b.design_id).order("version_number", { ascending: false }).limit(1).maybeSingle();
       if (le) throw le;
-      const n = (last?.version_number ?? 0) + 1;
-      const roof = b.roof;
+      const n = Number(last?.version_number ?? 0) + 1;
       let roofRow: any = null;
-
-      if (roof?.geometry) {
-        const rawGeometry = roof.geometry;
+      if (b.roof?.geometry) {
+        const rawGeometry = b.roof.geometry;
         const persistedGeometry = rawGeometry && typeof rawGeometry === "object" && !Array.isArray(rawGeometry) && rawGeometry.schemaVersion === 1
           ? rawGeometry
-          : { schemaVersion: 1, mesh: rawGeometry, planes: Array.isArray(roof.planes) ? roof.planes : [] };
+          : { schemaVersion: 1, mesh: rawGeometry, planes: [] };
         const roofInput = {
           design_id: b.design_id,
-          name: roof.name ?? "Roof",
+          name: b.roof.name ?? "Roof",
           geometry: persistedGeometry,
-          area_m2: roof.area_m2 ?? null,
-          elevation_m: roof.elevation_m ?? 0,
-          pitch_degrees: roof.pitch_degrees ?? 0,
-          azimuth_degrees: roof.azimuth_degrees ?? 180,
-          roof_type: roof.roof_type ?? "flat",
-          ai_confidence: roof.ai_confidence ?? null,
+          area_m2: b.roof.area_m2 ?? null,
+          elevation_m: b.roof.elevation_m ?? 0,
+          pitch_degrees: b.roof.pitch_degrees ?? 0,
+          azimuth_degrees: b.roof.azimuth_degrees ?? 180,
+          roof_type: b.roof.roof_type ?? "flat",
+          ai_confidence: b.roof.ai_confidence ?? null,
         };
-        const q = roof.id
-          ? await db.from("roofs").update(roofInput).eq("id", roof.id).eq("design_id", b.design_id).select().single()
+        const query = b.roof.id
+          ? await db.from("roofs").update(roofInput).eq("id", b.roof.id).eq("design_id", b.design_id).select().single()
           : await db.from("roofs").insert(roofInput).select().single();
-        if (q.error) throw q.error;
-        roofRow = q.data;
+        if (query.error) throw query.error;
+        roofRow = query.data;
       }
-
       const metrics = b.metrics ?? { panel_count: Array.isArray(b.panel_placements) ? b.panel_placements.length : 0 };
-      const { data: version, error: ve } = await db.from("design_versions").insert({
-        design_id: b.design_id,
-        version_number: n,
-        name: b.name ?? `Design v${n}`,
-        change_summary: b.change_summary ?? "Saved from design editor",
-        geometry: { roof: roofRow?.geometry ?? null },
-        metrics,
-        created_by: user.id,
-      }).select().single();
+      const { data: version, error: ve } = await db.from("design_versions").insert({ design_id: b.design_id, version_number: n, name: b.name ?? `Design v${n}`, change_summary: b.change_summary ?? "Saved from design editor", geometry: { roof: roofRow?.geometry ?? null }, metrics, created_by: user.id }).select().single();
       if (ve) throw ve;
-
       const placements = Array.isArray(b.panel_placements) ? b.panel_placements : [];
       let layout: any = null;
       if (placements.length || b.create_empty_layout) {
         const { data: l, error: le } = await db.from("panel_layouts").insert({
           design_version_id: version.id,
-          roof_id: roofRow?.id ?? roof?.id ?? null,
-          module_id: null,
+          roof_id: roofRow?.id ?? b.roof_id ?? null,
+          module_id: b.module_id ?? null,
           orientation_degrees: b.orientation_degrees ?? null,
           tilt_degrees: b.tilt_degrees ?? null,
           row_spacing_m: b.row_spacing_m ?? null,
@@ -119,24 +195,12 @@ Deno.serve(async (req) => {
         if (le) throw le;
         layout = l;
         if (placements.length) {
-          const rows = placements.map((p: any, i: number) => ({
-            panel_layout_id: l.id,
-            panel_index: i + 1,
-            x: Number(p.center?.x ?? p.x ?? 0),
-            y: Number(p.center?.y ?? p.y ?? 0),
-            z: Number(p.center?.z ?? p.z ?? 0),
-            rotation_degrees: Number(p.rotation ?? p.rotation_degrees ?? 0),
-            tilt_degrees: Number(p.tilt_degrees ?? 0),
-            row_number: p.row_number ?? null,
-            column_number: p.column_number ?? null,
-            string_number: p.string_number ?? null,
-          }));
+          const rows = placements.map((p: any, i: number) => ({ panel_layout_id: l.id, panel_index: i + 1, x: Number(p.center?.x ?? p.x ?? 0), y: Number(p.center?.y ?? p.y ?? 0), z: Number(p.center?.z ?? p.z ?? 0), rotation_degrees: Number(p.rotation ?? p.rotation_degrees ?? 0), tilt_degrees: Number(p.tilt_degrees ?? 0), row_number: p.row_number ?? null, column_number: p.column_number ?? null, string_number: p.string_number ?? null }));
           const { error: pe } = await db.from("panel_placements").insert(rows);
           if (pe) throw pe;
         }
       }
-
-      const { data: updated, error: ae } = await db.from("designs").update({ active_version_id: version.id, status: "ready" }).eq("id", b.design_id).select().single();
+      const { data: updated, error: ae } = await db.from("designs").update({ active_version_id: version.id, status: "ready", updated_at: new Date().toISOString() }).eq("id", b.design_id).select().single();
       if (ae) throw ae;
       return out({ success: true, design: updated, design_version: version, roof: roofRow, panel_layout: layout });
     }
@@ -150,14 +214,10 @@ Deno.serve(async (req) => {
       if (se) throw se;
       const { data: design, error: de } = await db.from("designs").insert({ project_id: project.id, site_id: site.id, name: b.design_name ?? "Solar Design" }).select().single();
       if (de) throw de;
-      const { data: version, error: ve } = await db.from("design_versions").insert({ design_id: design.id, version_number: 1, name: "Initial Design", change_summary: "Project created", geometry: {}, metrics: {}, created_by: user.id }).select().single();
-      if (ve) throw ve;
-      const { error: ae } = await db.from("designs").update({ active_version_id: version.id }).eq("id", design.id);
-      if (ae) throw ae;
-      return out({ success: true, customer, project, site, design, design_version: version });
+      return out({ success: true, customer, project, site, design });
     }
 
-    return out({ error: "Unknown action. Use get_design, get_design_for_project, save_design, or create_project." }, 400);
+    return out({ error: "Unknown action" }, 400);
   } catch (e) {
     console.error(e);
     return out({ error: e instanceof Error ? e.message : String(e) }, 500);
