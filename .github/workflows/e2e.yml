@@ -5,9 +5,11 @@ on:
     paths:
       - 'e2e/**'
       - 'src/shared/api/**'
+      - 'shared/api/**'
       - 'src/engine/**'
       - 'engine/solar/production/**'
       - 'features/design/**'
+      - 'supabase/migrations/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
       - '.github/workflows/e2e.yml'
@@ -19,9 +21,11 @@ on:
     paths:
       - 'e2e/**'
       - 'src/shared/api/**'
+      - 'shared/api/**'
       - 'src/engine/**'
       - 'engine/solar/production/**'
       - 'features/design/**'
+      - 'supabase/migrations/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
       - '.github/workflows/e2e.yml'
@@ -75,6 +79,9 @@ jobs:
 
       - name: Run dashboard production adapter tests
         run: npm run test:unit -- src/app/dashboard/production-metrics.test.ts
+
+      - name: Run backend design context contract tests
+        run: npm run test:unit -- shared/api/design-context.test.ts
 
       - name: Run persistence E2E
         env:
