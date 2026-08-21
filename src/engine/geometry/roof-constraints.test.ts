@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildUsableRoofRegion,
+  insetPolygon,
   isPointUsable,
   isPolygonUsable,
 } from "./roof-constraints";
@@ -12,6 +13,41 @@ describe("roof obstacle constraints", () => {
     { x: 10, y: 8 },
     { x: 0, y: 8 },
   ];
+
+  it("insets a rotated roof polygon by a true metric setback", () => {
+    const rotatedRoof = [
+      { x: 0, y: 0 },
+      { x: 8, y: 2 },
+      { x: 7, y: 8 },
+      { x: -1, y: 6 },
+    ];
+    const inset = insetPolygon(rotatedRoof, 1);
+
+    expect(inset).toHaveLength(4);
+    expect(inset.every((point) => isPointUsable(point, buildUsableRoofRegion(rotatedRoof)))).toBe(true);
+  });
+
+  it("uses the inset polygon as the usable roof boundary", () => {
+    const rotatedRoof = [
+      { x: 0, y: 0 },
+      { x: 8, y: 2 },
+      { x: 7, y: 8 },
+      { x: -1, y: 6 },
+    ];
+    const region = buildUsableRoofRegion(rotatedRoof, [], { edgeM: 1 });
+
+    expect(region.roof).toHaveLength(4);
+    expect(region.usableRoof).toHaveLength(4);
+    expect(region.usableRoof).not.toEqual(region.roof);
+    expect(isPointUsable({ x: 3, y: 4 }, region)).toBe(true);
+    expect(isPointUsable({ x: 0.1, y: 0.1 }, region)).toBe(false);
+    expect(isPolygonUsable([
+      { x: 1.0, y: 0.6 },
+      { x: 2.0, y: 0.85 },
+      { x: 2.0, y: 1.3 },
+      { x: 1.0, y: 1.05 },
+    ], region)).toBe(false);
+  });
 
   it("creates a deterministic exclusion zone for a chimney", () => {
     const region = buildUsableRoofRegion(roof, [
@@ -75,25 +111,6 @@ describe("roof obstacle constraints", () => {
       { x: 6.2, y: 3.0 },
       { x: 6.2, y: 3.2 },
       { x: 3.8, y: 3.2 },
-    ], region)).toBe(false);
-  });
-
-  it("rejects a panel whose edge violates a rotated roof edge setback", () => {
-    const rotatedRoof = [
-      { x: 0, y: 0 },
-      { x: 8, y: 2 },
-      { x: 7, y: 8 },
-      { x: -1, y: 6 },
-    ];
-    const region = buildUsableRoofRegion(rotatedRoof, [], { edgeM: 1 });
-
-    expect(isPointUsable({ x: 3, y: 4 }, region)).toBe(true);
-    expect(isPointUsable({ x: 0.1, y: 0.1 }, region)).toBe(false);
-    expect(isPolygonUsable([
-      { x: 1.0, y: 0.6 },
-      { x: 2.0, y: 0.85 },
-      { x: 2.0, y: 1.3 },
-      { x: 1.0, y: 1.05 },
     ], region)).toBe(false);
   });
 
