@@ -4,10 +4,11 @@ on:
   pull_request:
     paths:
       - 'e2e/**'
-      - 'src/shared/api/**'
-      - 'src/engine/**'
-      - 'engine/solar/production/**'
+      - 'shared/api/**'
+      - 'shared/types/**'
+      - 'engine/**'
       - 'features/design/**'
+      - 'supabase/functions/solar-project-api/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
       - '.github/workflows/e2e.yml'
@@ -18,10 +19,11 @@ on:
       - 'main'
     paths:
       - 'e2e/**'
-      - 'src/shared/api/**'
-      - 'src/engine/**'
-      - 'engine/solar/production/**'
+      - 'shared/api/**'
+      - 'shared/types/**'
+      - 'engine/**'
       - 'features/design/**'
+      - 'supabase/functions/solar-project-api/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
       - '.github/workflows/e2e.yml'
@@ -55,26 +57,17 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium
 
-      - name: Run P1-C 3D-to-production acceptance fixture
-        run: npm run test:unit -- src/engine/solar/fixtures/p1c-acceptance.test.ts
+      - name: Run canonical design context tests
+        run: npm run test:unit -- shared/api/__tests__/design-context.test.ts
 
-      - name: Run golden acceptance regression
-        run: npm run test:unit -- src/engine/solar/fixtures/golden-acceptance.test.ts
+      - name: Run persistence adapter tests
+        run: npm run test:unit -- shared/api/__tests__/design-persistence.test.ts
 
-      - name: Run financial golden scenarios
-        run: npm run test:unit -- engine/solar/production/financial-golden-scenarios.test.ts
+      - name: Run roof persistence tests
+        run: npm run test:unit -- shared/api/__tests__/design-persistence-roof.test.ts
 
-      - name: Run persistence unit tests
-        run: npm run test:unit -- src/shared/api/__tests__/design-persistence-roof.test.ts
-
-      - name: Run production heatmap unit tests
-        run: npm run test:unit -- features/design/production-heatmap.test.ts
-
-      - name: Run annual production engine unit tests
-        run: npm run test:unit -- src/engine/solar/production/annual-production.test.ts
-
-      - name: Run dashboard production adapter tests
-        run: npm run test:unit -- src/app/dashboard/production-metrics.test.ts
+      - name: Run production dashboard tests
+        run: npm run test:unit -- features/design/ProductionDashboard.test.tsx
 
       - name: Run persistence E2E
         env:
