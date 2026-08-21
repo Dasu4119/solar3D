@@ -48,4 +48,33 @@ describe("automatic solar layout", () => {
     expect(result.estimatedAnnualKwh).toBeGreaterThan(0);
     expect(result.score).toBe(result.estimatedAnnualKwh);
   });
+
+  it("ranks a valid layout by positive financial value when requested", () => {
+    const compactRoof: Point[] = [
+      { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 3 }, { x: 0, y: 3 },
+    ];
+    const result = generateSolarLayout({
+      roof: compactRoof,
+      panel,
+      constraints: { edgeGapM: 0, panelGapM: 0, allowedRotations: [0, 90] },
+      productionObjective: {
+        annualSpecificYieldKwhPerKwp: 1500,
+        performanceRatio: 0.82,
+      },
+      financialObjective: {
+        systemCostUsd: 1000,
+        electricityRateUsdPerKwh: 0.25,
+        annualOpexUsd: 10,
+        incentiveUsd: 100,
+        analysisYears: 20,
+        discountRate: 0.06,
+      },
+    });
+
+    expect(result.placements.length).toBeGreaterThan(0);
+    expect(result.estimatedAnnualKwh).toBeGreaterThan(0);
+    expect(result.estimatedNpvUsd).toBeGreaterThan(0);
+    expect(result.estimatedPaybackYears).toBeDefined();
+    expect(result.score).toBe(result.estimatedNpvUsd);
+  });
 });
