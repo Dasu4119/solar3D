@@ -19,7 +19,7 @@ const initialState: DesignEditorState = {
   zoom: 1,
   pan: { x: 0, y: 0 },
   selectedIds: [],
-  roofs: [{ id: "roof-1", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }] }],
+  roofs: [],
   panels: [],
   obstacles: [],
 };
