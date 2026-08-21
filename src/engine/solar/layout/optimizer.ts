@@ -6,15 +6,13 @@ import type { LayoutCandidate, LayoutRequest, SolarLayoutResult } from "./types"
 const DEG_TO_RAD = Math.PI / 180;
 
 function angularDistanceDeg(a: number, b: number): number {
-  const delta = Math.abs(((a - b + 180) % 360 + 360) % 360 - 180);
-  return delta;
+  return Math.abs(((a - b + 180) % 360 + 360) % 360 - 180);
 }
 
 function orientationFactor(actual: number, preferred: number | undefined): number {
   if (preferred == null || !Number.isFinite(preferred)) return 1;
-  // A bounded orientation factor is intentionally conservative: it is an
-  // optimization heuristic, not a bankable irradiance/shading simulation.
-  return 0.7 + 0.3 * Math.max(0, Math.cos(angularDistanceDeg(actual, preferred) * DEG_TO_RAD));
+  // Bounded heuristic for layout ranking; this is not a bankable irradiance model.
+  return 0.55 + 0.45 * Math.max(0, Math.cos(angularDistanceDeg(actual, preferred) * DEG_TO_RAD));
 }
 
 function pitchFactor(actual: number, preferred: number | undefined): number {
@@ -22,10 +20,7 @@ function pitchFactor(actual: number, preferred: number | undefined): number {
   return 0.8 + 0.2 * Math.max(0, Math.cos((actual - preferred) * DEG_TO_RAD));
 }
 
-function estimateGroupAnnualKwh(
-  group: LayoutCandidate[],
-  request: LayoutRequest,
-): number {
+function estimateGroupAnnualKwh(group: LayoutCandidate[], request: LayoutRequest): number {
   const plane = request.roofPlanes?.find((candidate) => candidate.id === group[0]?.roofPlaneId);
   const pitch = plane?.pitchDeg ?? 0;
   const baseAzimuth = plane?.azimuthDeg ?? 0;
@@ -92,13 +87,17 @@ export function generateSolarLayout(request: LayoutRequest): SolarLayoutResult {
   );
   const valid = selectProductionOptimalCandidates(candidates, request);
   const placements = valid.map((candidate) => candidate.placement);
+  const groupKeys = request.productionObjective
+    ? [...new Set(valid.map((candidate) => `${candidate.regionKey ?? candidate.roofPlaneId ?? "region"}|${candidate.placement.rotation}`))]
+    : [];
   const estimatedAnnualKwh = request.productionObjective
-    ? valid.reduce((sum, candidate) => {
-        const group = valid.filter((other) =>
-          (other.regionKey ?? other.roofPlaneId ?? "region") === (candidate.regionKey ?? candidate.roofPlaneId ?? "region")
-          && other.placement.rotation === candidate.placement.rotation,
+    ? groupKeys.reduce((sum, key) => {
+        const [regionKey, rotation] = key.split("|");
+        const group = valid.filter((candidate) =>
+          (candidate.regionKey ?? candidate.roofPlaneId ?? "region") === regionKey
+          && candidate.placement.rotation === Number(rotation),
         );
-        return sum + estimateGroupAnnualKwh(group, request) / Math.max(1, group.length);
+        return sum + estimateGroupAnnualKwh(group, request);
       }, 0)
     : undefined;
   const planeSummaries = request.roofPlanes?.map((plane) => {
