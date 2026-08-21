@@ -58,6 +58,65 @@ function distanceToPolygon(point: Point2D, polygon: Polygon2D): number {
   return Math.sqrt(minimum);
 }
 
+function polygonSignedArea(polygon: Polygon2D): number {
+  let area = 0;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const next = (index + 1) % polygon.length;
+    area += polygon[index].x * polygon[next].y - polygon[next].x * polygon[index].y;
+  }
+  return area / 2;
+}
+
+function lineIntersection(firstStart: Point2D, firstEnd: Point2D, secondStart: Point2D, secondEnd: Point2D): Point2D | null {
+  const firstDx = firstEnd.x - firstStart.x;
+  const firstDy = firstEnd.y - firstStart.y;
+  const secondDx = secondEnd.x - secondStart.x;
+  const secondDy = secondEnd.y - secondStart.y;
+  const denominator = firstDx * secondDy - firstDy * secondDx;
+  if (Math.abs(denominator) <= EPSILON) return null;
+  const offsetX = secondStart.x - firstStart.x;
+  const offsetY = secondStart.y - firstStart.y;
+  const t = (offsetX * secondDy - offsetY * secondDx) / denominator;
+  return { x: firstStart.x + t * firstDx, y: firstStart.y + t * firstDy };
+}
+
+/**
+ * Inset a simple polygon by a metric distance, independent of its rotation.
+ * Each edge is translated inward and adjacent translated lines are intersected.
+ */
+export function insetPolygon(polygon: Polygon2D, setbackM: number): Polygon2D {
+  if (polygon.length < 3 || setbackM <= EPSILON) return [...polygon];
+  const area = polygonSignedArea(polygon);
+  if (Math.abs(area) <= EPSILON) return [];
+  const ccw = area > 0;
+  const edges = polygon.map((start, index) => {
+    const end = polygon[(index + 1) % polygon.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= EPSILON) return null;
+    const inward = ccw ? { x: -dy / length, y: dx / length } : { x: dy / length, y: -dx / length };
+    const offset = { x: inward.x * setbackM, y: inward.y * setbackM };
+    return {
+      start: { x: start.x + offset.x, y: start.y + offset.y },
+      end: { x: end.x + offset.x, y: end.y + offset.y },
+    };
+  });
+  if (edges.some((edge) => edge === null)) return [];
+
+  const result: Polygon2D = [];
+  for (let index = 0; index < edges.length; index += 1) {
+    const previous = edges[(index - 1 + edges.length) % edges.length]!;
+    const current = edges[index]!;
+    const intersection = lineIntersection(previous.start, previous.end, current.start, current.end);
+    if (!intersection) return [];
+    result.push(intersection);
+  }
+
+  if (result.length < 3 || Math.abs(polygonSignedArea(result)) <= EPSILON) return [];
+  return result.every((point) => pointInPolygon(point, polygon)) ? result : [];
+}
+
 function orientation(a: Point2D, b: Point2D, c: Point2D): number {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
@@ -127,24 +186,25 @@ export function buildUsableRoofRegion(roof: Polygon2D, obstacles: RoofObstacle[]
 }
 
 export function isPointUsable(point: Point2D, region: UsableRoofRegion): boolean {
-  if (region.roof.length < 3 || !pointInPolygon(point, region.roof)) return false;
-  if (region.edgeSetbackM > 0 && distanceToPolygon(point, region.roof) < region.edgeSetbackM - EPSILON) return false;
+  const usableRoof = region.edgeSetbackM > 0 ? insetPolygon(region.roof, region.edgeSetbackM) : region.roof;
+  if (usableRoof.length < 3 || !pointInPolygon(point, usableRoof)) return false;
   return !region.exclusions.some((exclusion) => pointInPolygon(point, exclusion.polygon)
     || (exclusion.clearanceM > 0 && distanceToPolygon(point, exclusion.polygon) < exclusion.clearanceM - EPSILON));
 }
 
 export function isPolygonUsable(polygon: Polygon2D, region: UsableRoofRegion): boolean {
-  if (polygon.length < 3 || !polygon.every((point) => isPointUsable(point, region))) return false;
-  if (polygonEdgesIntersect(polygon, region.roof)) return false;
-  if (polygonBoundaryDistance(polygon, region.roof) < region.edgeSetbackM - EPSILON) return false;
-  if (!polygonContainsPolygon(region.roof, polygon)) return false;
+  if (polygon.length < 3) return false;
+  const usableRoof = region.edgeSetbackM > 0 ? insetPolygon(region.roof, region.edgeSetbackM) : region.roof;
+  if (usableRoof.length < 3 || !polygon.every((point) => isPointUsable(point, region))) return false;
+  if (polygonEdgesIntersect(polygon, usableRoof)) return false;
+  if (!polygonContainsPolygon(usableRoof, polygon)) return false;
   return !region.exclusions.some((exclusion) => polygonEdgesIntersect(polygon, exclusion.polygon)
     || polygonContainsPolygon(polygon, exclusion.polygon)
     || polygonBoundaryDistance(polygon, exclusion.polygon) < exclusion.clearanceM - EPSILON);
 }
 
 export function hasUsableArea(region: UsableRoofRegion): boolean {
-  return region.roof.length >= 3;
+  return (region.edgeSetbackM > 0 ? insetPolygon(region.roof, region.edgeSetbackM) : region.roof).length >= 3;
 }
 
 export { EPSILON };
