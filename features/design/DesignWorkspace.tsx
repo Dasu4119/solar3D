@@ -8,6 +8,7 @@ import { calculateAnnualProduction } from "@/engine/solar/production/annual-prod
 import { createDesignPersistence } from "@/shared/api/design-persistence";
 import { invokeFunction } from "@/shared/api/client";
 import { useDesignEditorStore } from "./editor-store";
+import { FinancialSummary } from "./FinancialSummary";
 import { ProductionDashboard } from "./ProductionDashboard";
 import type { DesignTool, Point2D } from "./types";
 
@@ -37,6 +38,7 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
   const [cursor, setCursor] = useState<Point2D | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [designId, setDesignId] = useState<string | null>(null);
+  const [persistedMetrics, setPersistedMetrics] = useState<Record<string, unknown> | undefined>();
   const [saveState, setSaveState] = useState<"loading" | "ready" | "saving" | "saved" | "error">("loading");
   const [saveError, setSaveError] = useState<string | null>(null);
   const enginePanels = useMemo(() => panels.map(toEngine), [panels]);
@@ -58,6 +60,7 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
           const loadedRoof = snapshot.roof.length ? { id: "roof-1", points: snapshot.roof } : null;
           const loadedPanels = snapshot.panelPlacements.map((p) => ({ id: p.id, x: p.center.x, y: p.center.y, rotation: Number(p.rotation) }));
           hydrate(loadedRoof, loadedPanels);
+          setPersistedMetrics(snapshot.metrics);
         }
         setDesignId(lookup.design.id);
         setSaveState("ready");
@@ -116,15 +119,17 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
           performance_ratio: production.performanceRatio,
           specific_yield_kwh_per_kwp: production.specificYieldKwhPerKwp,
           warnings: production.warnings,
+          financial: persistedMetrics?.financial,
         },
       });
       setDesignId(snapshot.designId);
+      setPersistedMetrics(snapshot.metrics);
       setSaveState("saved");
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Unable to save design");
       setSaveState("error");
     }
-  }, [designId, panels, persistence, production, roof]);
+  }, [designId, panels, persistedMetrics?.financial, persistence, production, roof]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -143,7 +148,8 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
   const capacity = production.dcCapacityKwp;
   const roofAreaM2 = 60;
   const usableRoofAreaM2 = 9.4 * 5.4;
-  const stateSignature = JSON.stringify({ roof, panels, production });
+  const financialMetrics = (persistedMetrics?.financial ?? undefined) as Record<string, unknown> | undefined;
+  const stateSignature = JSON.stringify({ roof, panels, production, financial: financialMetrics });
 
   return (
     <div className="design-shell" data-testid="solar-design-state" data-state={stateSignature}>
@@ -170,6 +176,8 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
           {selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}
           <hr/>
           <ProductionDashboard metrics={{ panelCount: panels.length, dcCapacityKw: capacity, roofAreaM2, usableRoofAreaM2, annualKwh: production.annualKwh, shadingLossPct: production.shadingLossPct }} />
+          <hr/>
+          <FinancialSummary metrics={financialMetrics} />
           {production.warnings.length > 0 && <div role="note" style={{ marginTop: 12, fontSize: 12 }}>{production.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
           {saveError && <div style={{ marginTop: 12, fontSize: 12 }}>{saveError}</div>}
         </aside>
