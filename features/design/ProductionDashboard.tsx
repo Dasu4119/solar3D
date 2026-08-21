@@ -3,14 +3,14 @@
 export interface ProductionDashboardMetrics {
   panelCount: number;
   dcCapacityKw: number;
-  roofAreaM2: number;
-  usableRoofAreaM2: number;
+  roofAreaM2: number | null;
+  usableRoofAreaM2?: number | null;
   annualKwh?: number;
   shadingLossPct?: number;
 }
 
-export function calculateRoofUtilization(roofAreaM2: number, usableRoofAreaM2: number): number {
-  if (!Number.isFinite(roofAreaM2) || roofAreaM2 <= 0 || !Number.isFinite(usableRoofAreaM2)) return 0;
+export function calculateRoofUtilization(roofAreaM2: number | null, usableRoofAreaM2: number | null | undefined): number | null {
+  if (roofAreaM2 == null || roofAreaM2 <= 0 || usableRoofAreaM2 == null || !Number.isFinite(usableRoofAreaM2)) return null;
   return Math.max(0, Math.min(100, (usableRoofAreaM2 / roofAreaM2) * 100));
 }
 
@@ -26,6 +26,11 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 
 export function ProductionDashboard({ metrics }: { metrics: ProductionDashboardMetrics }) {
   const utilization = calculateRoofUtilization(metrics.roofAreaM2, metrics.usableRoofAreaM2);
+  const roofDetail = metrics.roofAreaM2 == null
+    ? "Project roof area unavailable"
+    : metrics.usableRoofAreaM2 == null
+      ? `${metrics.roofAreaM2.toFixed(1)} m² total; usable area not calculated`
+      : `${metrics.usableRoofAreaM2.toFixed(1)} / ${metrics.roofAreaM2.toFixed(1)} m² usable`;
 
   return (
     <section className="production-dashboard" aria-label="Solar production summary">
@@ -41,7 +46,7 @@ export function ProductionDashboard({ metrics }: { metrics: ProductionDashboardM
         <Metric label="DC capacity" value={`${metrics.dcCapacityKw.toFixed(1)} kWp`} />
         <Metric label="Annual energy" value={metrics.annualKwh == null ? "—" : `${Math.round(metrics.annualKwh).toLocaleString()} kWh`} detail={metrics.annualKwh == null ? "Run annual simulation" : "Estimated annual production"} />
         <Metric label="Shading loss" value={metrics.shadingLossPct == null ? "—" : `${metrics.shadingLossPct.toFixed(1)}%`} detail={metrics.shadingLossPct == null ? "No simulation result" : "Annual energy loss"} />
-        <Metric label="Roof utilization" value={`${utilization.toFixed(0)}%`} detail={`${metrics.usableRoofAreaM2.toFixed(1)} / ${metrics.roofAreaM2.toFixed(1)} m² usable`} />
+        <Metric label="Roof utilization" value={utilization == null ? "—" : `${utilization.toFixed(0)}%`} detail={roofDetail} />
       </div>
     </section>
   );
