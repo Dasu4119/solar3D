@@ -60,6 +60,11 @@ function generateForRegion(
             { x: x + width / 2, y: y + length / 2 },
             { x: x - width / 2, y: y + length / 2 },
           ];
+          const footprint = panelFootprint(placement.center, width, length, rotation);
+          // Obstacle classification must happen independently of roof-validity.
+          // A candidate can be invalid because it intersects an obstacle, and the
+          // caller needs that reason preserved for explainability and acceptance tests.
+          const blocker = findBlockingObstacle(footprint, constraints.obstacles);
           const canonicalValid = canonicalRegion ? isPolygonUsable(corners, canonicalRegion) : false;
           const insideRegion = canonicalRegion
             ? canonicalValid
@@ -67,7 +72,6 @@ function generateForRegion(
           const result = insideRegion
             ? validatePanelPlacement(region.outer, placement, panel, { northM: edge, eastM: edge, southM: edge, westM: edge }, existingPlacements)
             : { valid: false, reasons: ["Panel footprint violates canonical roof constraints"] };
-          const blocker = result.valid ? findBlockingObstacle(panelFootprint(placement.center, width, length, rotation), constraints.obstacles) : undefined;
           const valid = result.valid && !blocker;
           candidates.push({ placement, valid, score: valid ? panel.powerWatts : -Infinity, blockedByObstacleId: blocker?.id, roofPlaneId: region.roofPlaneId });
         }
@@ -88,7 +92,14 @@ export function generateLayoutCandidates(
 ): LayoutCandidate[] {
   const canonical = usableRoofRegions?.length ? usableRoofRegions : undefined;
   const regions = canonical
-    ? canonical.map((region) => ({ outer: region.roof }))
+    ? canonical.map((region, index) => ({
+        // Generate candidates from the source roof polygon when supplied, while
+        // using the canonical region for validation. This lets obstacle-blocked
+        // candidates remain observable instead of being clipped away first.
+        outer: roofRegions?.[index]?.outer ?? region.roof,
+        holes: roofRegions?.[index]?.holes,
+        roofPlaneId: roofRegions?.[index]?.roofPlaneId,
+      }))
     : roofRegions?.length
       ? roofRegions
       : roofPlanes?.length

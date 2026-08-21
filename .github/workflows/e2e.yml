@@ -53,6 +53,9 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium
 
+      - name: Run P1-C 3D-to-production acceptance fixture
+        run: npm run test:unit -- src/engine/solar/fixtures/p1c-acceptance.test.ts
+
       - name: Run golden acceptance regression
         run: npm run test:unit -- src/engine/solar/fixtures/golden-acceptance.test.ts
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPlacementPreview } from "@/engine/solar/placement-preview";
 import type { SolarPanelSpec } from "@/engine/solar/panel";
 import type { PanelPlacement as EnginePlacement } from "@/engine/solar/placement";
+import { calculateAnnualProduction } from "@/engine/solar/production/annual-production";
 import { createDesignPersistence } from "@/shared/api/design-persistence";
 import { invokeFunction } from "@/shared/api/client";
 import { useDesignEditorStore } from "./editor-store";
@@ -41,7 +42,8 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
   const enginePanels = useMemo(() => panels.map(toEngine), [panels]);
   const panelById = useCallback((id: string) => id === PANEL.id ? PANEL : undefined, []);
   const roof = roofs[0]?.points?.length ? roofs[0].points : DEFAULT_ROOF;
-  const persistence = useMemo(() => createDesignPersistence({ invoke: (action, body) => invokeFunction(action === "get_design" || action === "save_design" ? "solar-project-api" : "solar-project-api", { action, ...body }) }), []);
+  const persistence = useMemo(() => createDesignPersistence({ invoke: (action, body) => invokeFunction("solar-project-api", { action, ...body }) }), []);
+  const production = useMemo(() => calculateAnnualProduction({ panelCount: panels.length, panelPowerWatts: PANEL.powerWatts }), [panels.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,14 +103,28 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
     try {
       setSaveState("saving");
       setSaveError(null);
-      const snapshot = await persistence.save({ designId, roof, panelPlacements: panels.map(toEngine), metrics: { panel_count: panels.length, dc_capacity_kw: panels.length * PANEL.powerWatts / 1000 } });
+      const snapshot = await persistence.save({
+        designId,
+        roof,
+        panelPlacements: panels.map(toEngine),
+        metrics: {
+          panel_count: panels.length,
+          dc_capacity_kw: production.dcCapacityKwp,
+          annual_kwh: production.annualKwh,
+          monthly_kwh: production.monthlyKwh,
+          shading_loss_pct: production.shadingLossPct,
+          performance_ratio: production.performanceRatio,
+          specific_yield_kwh_per_kwp: production.specificYieldKwhPerKwp,
+          warnings: production.warnings,
+        },
+      });
       setDesignId(snapshot.designId);
       setSaveState("saved");
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Unable to save design");
       setSaveState("error");
     }
-  }, [designId, panels, persistence, roof]);
+  }, [designId, panels, persistence, production, roof]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -124,12 +140,13 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
 
   const roofPoints = roof.map(worldToSvg).map((p) => `${p.x},${p.y}`).join(" ");
   const selected = panels.find((panel) => panel.id === selectedIds[0]);
-  const capacity = panels.length * PANEL.powerWatts / 1000;
+  const capacity = production.dcCapacityKwp;
   const roofAreaM2 = 60;
   const usableRoofAreaM2 = 9.4 * 5.4;
+  const stateSignature = JSON.stringify({ roof, panels, production });
 
   return (
-    <div className="design-shell">
+    <div className="design-shell" data-testid="solar-design-state" data-state={stateSignature}>
       <header className="design-header"><strong>Solar3D</strong><span> / Design</span><div className="design-actions"><button onClick={() => void save()} disabled={!designId || saveState === "saving"}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save"}</button><button className="primary">Generate proposal</button></div></header>
       <div className="design-body">
         <aside className="design-toolbar"><span className="toolbar-title">TOOLS</span>{tools.map((tool) => <button key={tool.id} className={activeTool === tool.id ? "tool active" : "tool"} onClick={() => setTool(tool.id)}><span>{tool.label}</span><kbd>{tool.hint}</kbd></button>)}</aside>
@@ -138,7 +155,7 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
             <defs><pattern id="solar-grid" width="27.5" height="27.5" patternUnits="userSpaceOnUse"><path d="M 27.5 0 L 0 0 0 27.5" fill="none" stroke="currentColor" strokeOpacity="0.08" /></pattern></defs>
             <rect width="800" height="500" fill="url(#solar-grid)" />
             <polygon points={roofPoints} fill="currentColor" fillOpacity="0.04" stroke="currentColor" strokeWidth="2" />
-            <text x={ORIGIN.x + 10} y={ORIGIN.y + 20} fontSize="13">Roof area · 60 m²</text>
+            <text x={ORIGIN.x + 10} y={ORIGIN.y + 20} fontSize="13">Roof area · {roofAreaM2.toFixed(0)} m²</text>
             {panels.map((panel) => { const p = worldToSvg({ x: panel.x, y: panel.y }); const w = (panel.rotation % 180 === 0 ? PANEL.widthM : PANEL.lengthM) * SCALE; const h = (panel.rotation % 180 === 0 ? PANEL.lengthM : PANEL.widthM) * SCALE; return <g key={panel.id} transform={`translate(${p.x} ${p.y}) rotate(${-panel.rotation})`} onPointerDown={(event) => { event.stopPropagation(); select(panel.id); setDraggingId(panel.id); (event.currentTarget as SVGGElement).setPointerCapture(event.pointerId); }} onPointerUp={() => setDraggingId(null)} onDoubleClick={(event) => { event.stopPropagation(); rotatePanel(panel.id); }}><rect x={-w / 2} y={-h / 2} width={w} height={h} rx="2" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth={selectedIds.includes(panel.id) ? 3 : 1.5} /><path d={`M ${-w / 2} 0 H ${w / 2} M 0 ${-h / 2} V ${h / 2}`} stroke="currentColor" strokeOpacity="0.35" /></g>; })}
             {preview && cursor && <g pointerEvents="none" opacity="0.72"><rect x={worldToSvg(preview.placement.center).x - (PANEL.widthM * SCALE) / 2} y={worldToSvg(preview.placement.center).y - (PANEL.lengthM * SCALE) / 2} width={PANEL.widthM * SCALE} height={PANEL.lengthM * SCALE} fill="currentColor" fillOpacity="0.12" stroke="currentColor" strokeWidth="2" strokeDasharray="6 4" /></g>}
           </svg>
@@ -152,7 +169,8 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
           <div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>
           {selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{PANEL.model}</strong></div><div className="property"><span>Power</span><strong>{PANEL.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}
           <hr/>
-          <ProductionDashboard metrics={{ panelCount: panels.length, dcCapacityKw: capacity, roofAreaM2, usableRoofAreaM2 }} />
+          <ProductionDashboard metrics={{ panelCount: panels.length, dcCapacityKw: capacity, roofAreaM2, usableRoofAreaM2, annualKwh: production.annualKwh, shadingLossPct: production.shadingLossPct }} />
+          {production.warnings.length > 0 && <div role="note" style={{ marginTop: 12, fontSize: 12 }}>{production.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
           {saveError && <div style={{ marginTop: 12, fontSize: 12 }}>{saveError}</div>}
         </aside>
       </div>
