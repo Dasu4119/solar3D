@@ -9,6 +9,12 @@ export interface CommercialReadinessInput {
   proposalAvailable: boolean;
   simulationProvenance?: "reference" | "user_supplied" | "site_weather" | null;
   warnings?: string[];
+  source?: {
+    designVersionId: string;
+    financialRunId: string | null;
+    bomRunId: string | null;
+    proposalRunId: string | null;
+  };
 }
 
 export interface CommercialReadinessStep {
@@ -25,6 +31,12 @@ export interface CommercialReadiness {
   provenanceLabel: string;
   blockers: string[];
   warnings: string[];
+  source: {
+    designVersionId: string;
+    financialRunId: string | null;
+    bomRunId: string | null;
+    proposalRunId: string | null;
+  } | null;
 }
 
 export function getCommercialReadiness(input: CommercialReadinessInput): CommercialReadiness {
@@ -42,8 +54,8 @@ export function getCommercialReadiness(input: CommercialReadinessInput): Commerc
     warnings.push("Simulation provenance is not available.");
   }
 
-  const canGenerateBom = blockers.length === 0;
-  const canGenerateProposal = canGenerateBom && input.bomAvailable;
+  const canGenerateBom = blockers.length === 0 && Boolean(input.source?.designVersionId && input.source?.financialRunId);
+  const canGenerateProposal = canGenerateBom && input.bomAvailable && Boolean(input.source?.bomRunId);
   const status: CommercialReadinessStatus = blockers.length > 0 ? "blocked" : warnings.length > 0 ? "warning" : "ready";
 
   return {
@@ -67,5 +79,6 @@ export function getCommercialReadiness(input: CommercialReadinessInput): Commerc
           : "Unknown",
     blockers,
     warnings,
+    source: input.source ?? null,
   };
 }
