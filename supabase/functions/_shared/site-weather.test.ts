@@ -10,10 +10,11 @@ describe("site weather adapter", () => {
     });
   });
 
-  it("converts ERA5 daily shortwave radiation to annual irradiance", async () => {
+  it("converts ERA5 daily shortwave radiation from MJ/m² to annual kWh/m²", async () => {
     const response = new Response(JSON.stringify({
       daily: {
-        shortwave_radiation_sum: Array.from({ length: 5 }, () => 1000),
+        // One synthetic 1000 kWh/m² year represented in MJ/m².
+        shortwave_radiation_sum: Array.from({ length: 5 }, () => 3600),
       },
     }), { status: 200 });
     const result = await fetchSiteWeather(16.3067, 80.4365, async () => response);
