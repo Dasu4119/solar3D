@@ -15,32 +15,15 @@ export function calculateRoofUtilization(roofAreaM2: number | null, usableRoofAr
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <div className="production-metric">
-      <span className="production-metric-label">{label}</span>
-      <strong className="production-metric-value">{value}</strong>
-      {detail && <span className="production-metric-detail">{detail}</span>}
-    </div>
-  );
+  return <div className="production-metric"><span className="production-metric-label">{label}</span><strong className="production-metric-value">{value}</strong>{detail && <span className="production-metric-detail">{detail}</span>}</div>;
 }
 
 export function ProductionDashboard({ metrics }: { metrics: ProductionDashboardMetrics }) {
   const utilization = calculateRoofUtilization(metrics.roofAreaM2, metrics.usableRoofAreaM2);
-  const roofDetail = metrics.roofAreaM2 == null
-    ? "Project roof area unavailable"
-    : metrics.usableRoofAreaM2 == null
-      ? `${metrics.roofAreaM2.toFixed(1)} m² total; usable area not calculated`
-      : `${metrics.usableRoofAreaM2.toFixed(1)} / ${metrics.roofAreaM2.toFixed(1)} m² usable`;
-
+  const roofDetail = metrics.roofAreaM2 == null ? "Project roof area unavailable" : metrics.usableRoofAreaM2 == null ? `${metrics.roofAreaM2.toFixed(1)} m² total; usable area not calculated` : `${metrics.usableRoofAreaM2.toFixed(1)} / ${metrics.roofAreaM2.toFixed(1)} m² usable`;
   return (
     <section className="production-dashboard" aria-label="Solar production summary">
-      <header className="production-dashboard-header">
-        <div>
-          <span className="toolbar-title">PRODUCTION</span>
-          <h3>System performance</h3>
-        </div>
-        <span className="production-dashboard-status">Simulation</span>
-      </header>
+      <header className="production-dashboard-header"><div><span className="toolbar-title">PRODUCTION</span><h3>System performance</h3></div><span className="production-dashboard-status">Simulation</span></header>
       <div className="production-dashboard-grid">
         <Metric label="Panels" value={String(metrics.panelCount)} />
         <Metric label="DC capacity" value={`${metrics.dcCapacityKw.toFixed(1)} kWp`} />

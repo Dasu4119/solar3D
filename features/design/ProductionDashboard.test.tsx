@@ -8,8 +8,8 @@ describe("ProductionDashboard metrics", () => {
     expect(calculateRoofUtilization(60, -5)).toBe(0);
   });
 
-  it("handles invalid roof area safely", () => {
-    expect(calculateRoofUtilization(0, 10)).toBe(0);
-    expect(calculateRoofUtilization(Number.NaN, 10)).toBe(0);
+  it("returns null when usable roof area is not authoritative", () => {
+    expect(calculateRoofUtilization(200, null)).toBeNull();
+    expect(calculateRoofUtilization(null, 10)).toBeNull();
   });
 });

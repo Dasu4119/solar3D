@@ -1,15 +1,18 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('design persistence and production acceptance', () => {
-  test('save → refresh → load preserves design, production, and financial state', async ({ page }) => {
+  test('save → refresh → load preserves canonical project, production, and financial state', async ({ page }) => {
     const baseUrl = process.env.E2E_BASE_URL;
     const projectId = process.env.E2E_PROJECT_ID;
     test.skip(!baseUrl || !projectId || !process.env.E2E_STORAGE_STATE, 'Authenticated E2E environment is not configured');
 
-    await page.goto(`${baseUrl}/design/${projectId}`);
+    await page.goto(`${baseUrl}/projects/${projectId}/design`);
     await page.waitForLoadState('networkidle');
 
     const state = page.locator('[data-testid="solar-design-state"]');
+    await expect(state).toHaveAttribute('data-project-id', projectId);
+    await expect(state).toHaveAttribute('data-roof-id', /.+/);
+    await expect(state).toHaveAttribute('data-module-id', /.+/);
     const before = await state.getAttribute('data-state');
     expect(before).toBeTruthy();
 
