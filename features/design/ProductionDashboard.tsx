@@ -1,5 +1,9 @@
 "use client";
 
+import { calculateRoofUtilization } from "./production-metrics";
+
+export { calculateRoofUtilization } from "./production-metrics";
+
 export interface ProductionDashboardMetrics {
   panelCount: number;
   dcCapacityKw: number;
@@ -7,11 +11,6 @@ export interface ProductionDashboardMetrics {
   usableRoofAreaM2?: number | null;
   annualKwh?: number;
   shadingLossPct?: number;
-}
-
-export function calculateRoofUtilization(roofAreaM2: number | null, usableRoofAreaM2: number | null | undefined): number | null {
-  if (roofAreaM2 == null || roofAreaM2 <= 0 || usableRoofAreaM2 == null || !Number.isFinite(usableRoofAreaM2)) return null;
-  return Math.max(0, Math.min(100, (usableRoofAreaM2 / roofAreaM2) * 100));
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
