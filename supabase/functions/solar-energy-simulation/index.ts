@@ -12,7 +12,7 @@ const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers });
 
 const ENGINE_NAME = "solar3d-production";
-const ENGINE_VERSION = "2026.08.p0.1";
+const ENGINE_VERSION = "2026.08.p1.1";
 const MONTHLY_SHARES = [0.075, 0.073, 0.085, 0.085, 0.09, 0.085, 0.09, 0.09, 0.085, 0.08, 0.075, 0.082];
 
 Deno.serve(async (req) => {
@@ -34,10 +34,37 @@ Deno.serve(async (req) => {
     const designVersionId = body.design_version_id;
     if (!designVersionId) return json({ error: "design_version_id is required" }, 400);
 
+    // Simulation is downstream of the canonical design lifecycle: only a
+    // finalized design that is explicitly active may produce engineering data.
+    const { data: designVersion, error: designVersionError } = await sb
+      .from("design_versions")
+      .select("id,design_id,status,content_hash")
+      .eq("id", designVersionId)
+      .maybeSingle();
+    if (designVersionError) throw designVersionError;
+    if (!designVersion) return json({ error: "Design version not found" }, 404);
+    if (designVersion.status !== "finalized") {
+      return json({ error: "Simulation requires a finalized design version" }, 400);
+    }
+
+    const { data: design, error: designError } = await sb
+      .from("designs")
+      .select("id,active_version_id")
+      .eq("id", designVersion.design_id)
+      .maybeSingle();
+    if (designError) throw designError;
+    if (!design || design.active_version_id !== designVersionId) {
+      return json({ error: "Simulation requires the active engineering design version" }, 400);
+    }
+
     const annualIrradiance = Number(body.annual_irradiance_kwh_m2 ?? 1700);
     const performanceRatio = Number(body.performance_ratio ?? 0.8);
     const degradation = Number(body.annual_degradation_percent ?? 0.5);
     const years = Math.min(30, Math.max(1, Math.floor(Number(body.years ?? 25))));
+    const requestedProvenance = String(body.provenance_class ?? "reference");
+    const provenanceClass = ["reference", "user_supplied", "site_weather"].includes(requestedProvenance)
+      ? requestedProvenance
+      : "reference";
 
     if (!Number.isFinite(annualIrradiance) || annualIrradiance < 0) {
       return json({ error: "annual_irradiance_kwh_m2 must be a non-negative number" }, 400);
@@ -82,7 +109,9 @@ Deno.serve(async (req) => {
     };
     const inputSnapshot = {
       design_version_id: designVersionId,
+      design_content_hash: designVersion.content_hash,
       system_capacity_kw: capacity,
+      provenance_class: provenanceClass,
       ...assumptions,
     };
     const resultSnapshot = {
@@ -93,8 +122,12 @@ Deno.serve(async (req) => {
       annual,
     };
     const weatherSource = {
-      type: "user_supplied_or_reference",
+      type: provenanceClass,
       annual_irradiance_kwh_m2: annualIrradiance,
+      source_id: body.weather_source_id ?? null,
+      source_name: body.weather_source_name ?? null,
+      location: body.weather_location ?? null,
+      retrieved_at: body.weather_retrieved_at ?? null,
     };
 
     const { data: lastRun, error: lastRunError } = await sb
@@ -111,6 +144,8 @@ Deno.serve(async (req) => {
       .from("simulation_runs")
       .insert({
         design_version_id: designVersionId,
+        design_content_hash: designVersion.content_hash,
+        provenance_class: provenanceClass,
         run_number: runNumber,
         status: "completed",
         engine_name: ENGINE_NAME,
@@ -122,7 +157,7 @@ Deno.serve(async (req) => {
         created_by: user.id,
         completed_at: new Date().toISOString(),
       })
-      .select("id,run_number,engine_name,engine_version,input_hash,result_hash,created_at,completed_at")
+      .select("id,run_number,engine_name,engine_version,design_content_hash,provenance_class,input_hash,result_hash,weather_source,created_at,completed_at")
       .single();
 
     if (runError) throw runError;
@@ -131,6 +166,11 @@ Deno.serve(async (req) => {
       success: true,
       simulation_run: run,
       design_version_id: designVersionId,
+      provenance: {
+        class: provenanceClass,
+        design_content_hash: designVersion.content_hash,
+        weather_source: weatherSource,
+      },
       engine: { name: ENGINE_NAME, version: ENGINE_VERSION },
       assumptions,
       summary: {
