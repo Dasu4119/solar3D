@@ -8,7 +8,7 @@ export interface DesignContextApiResponse {
   roofs?: Array<{ id?: string; geometry?: unknown; area_m2?: number | null }>;
   module?: { id?: string; manufacturer?: string; model?: string; widthM?: number; lengthM?: number; powerWatts?: number; efficiency?: number } | null;
   defaults?: { setback?: Partial<DesignContextSetback> } | null;
-  layout?: { roof_id?: string | null; module_id?: string | null; setback_m?: number | null } | null;
+  layout?: { roof_id?: string | null; module_id?: string | null; setback_m?: number | null; setback_north_m?: number | null; setback_east_m?: number | null; setback_south_m?: number | null; setback_west_m?: number | null } | null;
 }
 
 function geometryToPoints(geometry: unknown): Point2D[] {
@@ -33,16 +33,27 @@ function geometryToPoints(geometry: unknown): Point2D[] {
 
 export function mapDesignContext(response: DesignContextApiResponse): DesignContext {
   if (!response.success || !response.design?.id || !response.module?.id) throw new Error(response.error ?? "Design context is not configured");
-  const roof = response.roofs?.[0];
-  const points = geometryToPoints(roof?.geometry);
-  if (points.length < 3) throw new Error("Project roof geometry is missing or invalid");
+  const selectedRoof = response.layout?.roof_id
+    ? response.roofs?.find((roof) => roof.id === response.layout?.roof_id)
+    : response.roofs?.[0];
+  const points = geometryToPoints(selectedRoof?.geometry);
+  if (points.length < 3) throw new Error("Selected project roof geometry is missing or invalid");
   const defaults = response.defaults?.setback ?? {};
   const uniformSetback = typeof response.layout?.setback_m === "number" ? response.layout.setback_m : null;
-  const setback = { northM: uniformSetback ?? defaults.northM ?? 0, eastM: uniformSetback ?? defaults.eastM ?? 0, southM: uniformSetback ?? defaults.southM ?? 0, westM: uniformSetback ?? defaults.westM ?? 0 };
+  const setback = {
+    northM: response.layout?.setback_north_m ?? uniformSetback ?? defaults.northM ?? 0,
+    eastM: response.layout?.setback_east_m ?? uniformSetback ?? defaults.eastM ?? 0,
+    southM: response.layout?.setback_south_m ?? uniformSetback ?? defaults.southM ?? 0,
+    westM: response.layout?.setback_west_m ?? uniformSetback ?? defaults.westM ?? 0,
+  };
   const module = response.module;
   return {
-    designId: response.design.id, designVersionId: response.active_version?.id ?? response.design.active_version_id ?? null,
-    roofId: response.layout?.roof_id ?? roof?.id ?? null, roof: points, roofAreaM2: roof?.area_m2 ?? null,
-    module: { id: module.id!, manufacturer: module.manufacturer ?? "", model: module.model ?? "", widthM: Number(module.widthM ?? 0), lengthM: Number(module.lengthM ?? 0), powerWatts: Number(module.powerWatts ?? 0), efficiency: Number(module.efficiency ?? 0) }, setback,
+    designId: response.design.id,
+    designVersionId: response.active_version?.id ?? response.design.active_version_id ?? null,
+    roofId: response.layout?.roof_id ?? selectedRoof?.id ?? null,
+    roof: points,
+    roofAreaM2: selectedRoof?.area_m2 ?? null,
+    module: { id: module.id!, manufacturer: module.manufacturer ?? "", model: module.model ?? "", widthM: Number(module.widthM ?? 0), lengthM: Number(module.lengthM ?? 0), powerWatts: Number(module.powerWatts ?? 0), efficiency: Number(module.efficiency ?? 0) },
+    setback,
   };
 }
