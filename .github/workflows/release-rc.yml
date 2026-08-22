@@ -1,0 +1,53 @@
+name: Release Candidate Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit test suite
+        run: npm run test:unit
+
+      - name: Build application
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Commercial E2E
+        if: ${{ env.E2E_BASE_URL != '' && env.E2E_PROJECT_ID != '' && env.E2E_STORAGE_STATE != '' }}
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
+          E2E_STORAGE_STATE: ${{ secrets.E2E_STORAGE_STATE }}
+        run: npm run test:e2e -- --project=chromium
+
+      - name: Report missing E2E secrets
+        if: ${{ env.E2E_BASE_URL == '' || env.E2E_PROJECT_ID == '' || env.E2E_STORAGE_STATE == '' }}
+        run: |
+          echo "Commercial E2E was not executed because required repository secrets are not configured."
+          echo "Release approval must remain blocked until authenticated E2E infrastructure is configured."
+          exit 1
