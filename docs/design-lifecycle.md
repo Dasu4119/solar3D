@@ -13,9 +13,10 @@ A design may move forward only when the preceding gate is satisfied. Downstream 
 ## Authority rules
 
 - Supabase-backed design context is the authority for project, site, roof, module, obstacles, setbacks, placements, electrical configuration, and persisted layout configuration.
+- `designs.draft_version_id` identifies the mutable working version.
+- `designs.active_version_id` identifies the active engineering version and is not promoted by an ordinary editor Save.
+- `design_versions.active_layout_id` explicitly selects the layout for a version; consumers must not rely on array ordering such as `layouts[0]`.
 - The editor store is UI state plus the current editable draft; it is not an independent engineering source of truth.
-- A design version is an immutable engineering snapshot. Ordinary editor saves must not create accepted engineering versions.
-- The active design version must be selected explicitly. Consumers must not rely on array ordering such as `versions[0]` or `layouts[0]`.
 - An accepted design version is the only version eligible for simulation-backed commercial outputs such as BOM and proposal generation.
 - Auto Layout remains a supported product capability. Its inputs are persisted design/layout configuration rather than frontend-only constants.
 
@@ -32,14 +33,12 @@ Other generation inputs such as row spacing and orientation must be stored with 
 
 ## Version semantics
 
-Recommended conceptual separation:
-
 1. **Draft** — editable working state.
 2. **Revision** — persisted draft snapshot used for recovery/history.
 3. **Engineering version** — immutable validated snapshot.
 4. **Accepted version** — explicit engineering version approved for downstream use.
 
-The schema/API implementation should preserve this distinction rather than treating every Save click as an accepted engineering version.
+The schema/API implementation preserves this distinction rather than treating every Save click as an accepted engineering version.
 
 ## Downstream gating
 
