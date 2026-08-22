@@ -2,15 +2,23 @@
 
 import type { CommercialReadiness } from "./commercial-readiness";
 
-export function CommercialReadinessPanel({ readiness }: { readiness: CommercialReadiness }) {
+interface CommercialReadinessPanelProps {
+  readiness: CommercialReadiness;
+  onGenerateBom?: () => void;
+  onGenerateProposal?: () => void;
+}
+
+export function CommercialReadinessPanel({ readiness, onGenerateBom, onGenerateProposal }: CommercialReadinessPanelProps) {
   const statusLabel = readiness.status === "ready" ? "Commercially ready" : readiness.status === "warning" ? "Ready with warnings" : "Commercial outputs blocked";
+  const bomEnabled = readiness.canGenerateBom && Boolean(onGenerateBom);
+  const proposalEnabled = readiness.canGenerateProposal && Boolean(onGenerateProposal);
 
   return (
-    <section aria-label="commercial readiness" data-testid="commercial-readiness" data-status={readiness.status}>
+    <section aria-labelledby="commercial-readiness-title" data-testid="commercial-readiness" data-status={readiness.status}>
       <header>
         <div>
           <span>COMMERCIAL READINESS</span>
-          <h3>{statusLabel}</h3>
+          <h3 id="commercial-readiness-title">{statusLabel}</h3>
         </div>
         <strong>{readiness.provenanceLabel}</strong>
       </header>
@@ -38,8 +46,12 @@ export function CommercialReadinessPanel({ readiness }: { readiness: CommercialR
       )}
 
       <footer>
-        <button type="button" disabled={!readiness.canGenerateBom}>Generate BOM</button>
-        <button type="button" disabled={!readiness.canGenerateProposal}>Generate proposal</button>
+        <button type="button" disabled={!bomEnabled} onClick={onGenerateBom} title={!onGenerateBom ? "Commercial BOM generation is not connected to an action yet." : undefined}>
+          Generate BOM
+        </button>
+        <button type="button" disabled={!proposalEnabled} onClick={onGenerateProposal} title={!onGenerateProposal ? "Proposal generation is not connected to an action yet." : undefined}>
+          Generate proposal
+        </button>
       </footer>
     </section>
   );
