@@ -22,7 +22,6 @@ export function CommercialReadinessPanel({ readiness, onGenerateBom, onGenerateP
         </div>
         <strong>{readiness.provenanceLabel}</strong>
       </header>
-
       <ol aria-label="commercial lineage">
         {readiness.steps.map((step) => (
           <li key={step.id} data-complete={step.complete}>
@@ -31,28 +30,23 @@ export function CommercialReadinessPanel({ readiness, onGenerateBom, onGenerateP
           </li>
         ))}
       </ol>
-
       {readiness.blockers.length > 0 && (
         <div role="alert">
           <strong>Action required</strong>
           {readiness.blockers.map((blocker) => <p key={blocker}>{blocker}</p>)}
         </div>
       )}
-
       {readiness.warnings.length > 0 && (
         <div role="note">
           {readiness.warnings.map((warning) => <p key={warning}>{warning}</p>)}
         </div>
       )}
-
-      <footer>
-        <button type="button" disabled={!bomEnabled} onClick={onGenerateBom} title={!onGenerateBom ? "Commercial BOM generation is not connected to an action yet." : undefined}>
-          Generate BOM
-        </button>
-        <button type="button" disabled={!proposalEnabled} onClick={onGenerateProposal} title={!onGenerateProposal ? "Proposal generation is not connected to an action yet." : undefined}>
-          Generate proposal
-        </button>
-      </footer>
+      {(onGenerateBom || onGenerateProposal) && (
+        <footer>
+          {onGenerateBom && <button type="button" disabled={!bomEnabled} onClick={onGenerateBom}>Generate BOM</button>}
+          {onGenerateProposal && <button type="button" disabled={!proposalEnabled} onClick={onGenerateProposal}>Generate proposal</button>}
+        </footer>
+      )}
     </section>
   );
 }
