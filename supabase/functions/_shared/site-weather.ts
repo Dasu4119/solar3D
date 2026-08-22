@@ -45,7 +45,9 @@ export async function fetchSiteWeather(latitude: number, longitude: number, fetc
     : [];
   if (!values.length) throw new Error("Site weather provider returned no solar-radiation observations");
 
-  const annualIrradianceKwhM2 = values.reduce((sum, value) => sum + value, 0) / period.years;
+  // Open-Meteo daily shortwave_radiation_sum is reported in MJ/m².
+  // Convert the five-year mean to the engine's kWh/m² convention.
+  const annualIrradianceKwhM2 = (values.reduce((sum, value) => sum + value, 0) / period.years) / 3.6;
   if (!Number.isFinite(annualIrradianceKwhM2) || annualIrradianceKwhM2 <= 0) {
     throw new Error("Site weather provider returned an invalid annual irradiance value");
   }
