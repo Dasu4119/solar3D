@@ -61,8 +61,8 @@ jobs:
         run: npm run test:unit -- shared/api/__tests__/design-persistence.test.ts
       - name: Run roof persistence tests
         run: npm run test:unit -- shared/api/__tests__/design-persistence-roof.test.ts
-      - name: Run production dashboard tests
-        run: npm run test:unit -- features/design/ProductionDashboard.test.tsx
+      - name: Run production dashboard metric tests
+        run: npm run test:unit -- features/design/production-metrics.test.ts
       - name: Run persistence E2E
         env:
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}

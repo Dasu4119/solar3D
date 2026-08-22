@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateRoofUtilization } from "./ProductionDashboard";
+import { calculateRoofUtilization } from "./production-metrics";
 
 describe("ProductionDashboard metrics", () => {
   it("calculates and clamps roof utilization", () => {
