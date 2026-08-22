@@ -8,6 +8,8 @@ import { calculateAnnualProduction } from "@/engine/solar/production/annual-prod
 import { createDesignPersistence } from "@/shared/api/design-persistence";
 import { invokeFunction } from "@/shared/api/client";
 import { mapDesignContext, type DesignContext, type DesignContextApiResponse } from "@/shared/api/design-context";
+import { CommercialReadinessPanel } from "@/features/commercial/CommercialReadinessPanel";
+import { getCommercialReadiness, type CommercialReadiness } from "@/features/commercial/commercial-readiness";
 import { useDesignEditorStore } from "./editor-store";
 import { FinancialSummary } from "./FinancialSummary";
 import { ProductionDashboard } from "./ProductionDashboard";
@@ -23,6 +25,21 @@ function worldToSvg(point: Point2D, maxY: number) { return { x: ORIGIN.x + point
 function svgToWorld(clientX: number, clientY: number, rect: DOMRect, maxY: number): Point2D { return { x: (clientX - rect.left - ORIGIN.x) / SCALE, y: maxY - (clientY - rect.top - ORIGIN.y) / SCALE }; }
 function toEngine(panel: { id: string; x: number; y: number; rotation: number }, moduleId: string): EnginePlacement { return { id: panel.id, panelId: moduleId, center: { x: panel.x, y: panel.y }, rotation: panel.rotation as 0 | 90 | 180 | 270 }; }
 
+type CommercialReadinessApiResponse = {
+  success?: boolean;
+  error?: string;
+  readiness?: {
+    designFinalized: boolean;
+    engineeringAccepted: boolean;
+    simulationCompleted: boolean;
+    financialCompleted: boolean;
+    bomAvailable: boolean;
+    proposalAvailable: boolean;
+    simulationProvenance?: "reference" | "user_supplied" | "site_weather" | null;
+    warnings?: string[];
+  };
+};
+
 export function DesignWorkspace({ projectId }: { projectId: string }) {
   const { activeTool, setTool, zoom, setZoom, roofs, panels, selectedIds, addPanel, movePanel, rotatePanel, removePanel, select, hydrate } = useDesignEditorStore();
   const stageRef = useRef<SVGSVGElement | null>(null);
@@ -30,9 +47,23 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [context, setContext] = useState<DesignContext | null>(null);
   const [persistedMetrics, setPersistedMetrics] = useState<Record<string, unknown> | undefined>();
+  const [commercialReadiness, setCommercialReadiness] = useState<CommercialReadiness | null>(null);
+  const [commercialReadinessError, setCommercialReadinessError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"loading" | "ready" | "saving" | "saved" | "error">("loading");
   const [saveError, setSaveError] = useState<string | null>(null);
   const persistence = useMemo(() => createDesignPersistence({ invoke: (action, body) => invokeFunction("solar-project-api", { action, ...body }) }), []);
+
+  const refreshCommercialReadiness = useCallback(async () => {
+    try {
+      setCommercialReadinessError(null);
+      const response = await invokeFunction<CommercialReadinessApiResponse>("commercial-readiness", { project_id: projectId });
+      if (!response.success || !response.readiness) throw new Error(response.error ?? "Commercial readiness is unavailable");
+      setCommercialReadiness(getCommercialReadiness(response.readiness));
+    } catch (error) {
+      setCommercialReadiness(null);
+      setCommercialReadinessError(error instanceof Error ? error.message : "Commercial readiness is unavailable");
+    }
+  }, [projectId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,13 +82,14 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
             setPersistedMetrics(snapshot.metrics);
           }
         }
+        await refreshCommercialReadiness();
         setSaveState("ready");
       } catch (error) {
         if (!cancelled) { setSaveError(error instanceof Error ? error.message : "Unable to load project design context"); setSaveState("error"); }
       }
     })();
     return () => { cancelled = true; };
-  }, [hydrate, persistence, projectId]);
+  }, [hydrate, persistence, projectId, refreshCommercialReadiness]);
 
   const module = context?.module;
   const roof = roofs[0]?.points?.length ? roofs[0].points : context?.roof ?? [];
@@ -92,8 +124,9 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
         metrics: { panel_count: panels.length, dc_capacity_kw: production.dcCapacityKwp, annual_kwh: production.annualKwh, monthly_kwh: production.monthlyKwh, shading_loss_pct: production.shadingLossPct, performance_ratio: production.performanceRatio, specific_yield_kwh_per_kwp: production.specificYieldKwhPerKwp, warnings: production.warnings, financial: persistedMetrics?.financial },
       });
       setPersistedMetrics(snapshot.metrics); setSaveState("saved");
+      await refreshCommercialReadiness();
     } catch (error) { setSaveError(error instanceof Error ? error.message : "Unable to save design"); setSaveState("error"); }
-  }, [context, module, panels, persistence, persistedMetrics?.financial, production, roof]);
+  }, [context, module, panels, persistence, persistedMetrics?.financial, production, refreshCommercialReadiness, roof]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key.toLowerCase() === "p") setTool("panel"); if (event.key.toLowerCase() === "v") setTool("select"); if (event.key.toLowerCase() === "r" && selectedIds[0]) rotatePanel(selectedIds[0]); if (event.key === "Delete" && selectedIds[0]) removePanel(selectedIds[0]); if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save(); } };
@@ -107,11 +140,11 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
   const roofPoints = roof.map((point) => worldToSvg(point, maxY)).map((point) => `${point.x},${point.y}`).join(" ");
   const selected = panels.find((panel) => panel.id === selectedIds[0]);
   const financialMetrics = (persistedMetrics?.financial ?? undefined) as Record<string, unknown> | undefined;
-  const stateSignature = JSON.stringify({ designId: context.designId, roof, panels, module, production, financial: financialMetrics });
+  const stateSignature = JSON.stringify({ designId: context.designId, roof, panels, module, production, financial: financialMetrics, commercialReadiness });
 
   return (
     <div className="design-shell" data-testid="solar-design-state" data-state={stateSignature} data-project-id={projectId} data-roof-id={context.roofId ?? ""} data-module-id={module.id}>
-      <header className="design-header"><strong>Solar3D</strong><span> / Design</span><div className="design-actions"><button onClick={() => void save()} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save"}</button><button className="primary">Generate proposal</button></div></header>
+      <header className="design-header"><strong>Solar3D</strong><span> / Design</span><div className="design-actions"><button onClick={() => void save()} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save"}</button></div></header>
       <div className="design-body">
         <aside className="design-toolbar"><span className="toolbar-title">TOOLS</span>{tools.map((tool) => <button key={tool.id} className={activeTool === tool.id ? "tool active" : "tool"} onClick={() => setTool(tool.id)}><span>{tool.label}</span><kbd>{tool.hint}</kbd></button>)}</aside>
         <section className="cad-stage" onPointerLeave={() => setCursor(null)}>
@@ -129,6 +162,8 @@ export function DesignWorkspace({ projectId }: { projectId: string }) {
           <span className="toolbar-title">PROPERTIES</span><h3>Design</h3>
           <div className="property"><span>Project</span><strong>{projectId}</strong></div><div className="property"><span>Tool</span><strong>{activeTool}</strong></div><div className="property"><span>Zoom</span><strong>{Math.round(zoom * 100)}%</strong></div>
           {selected && <><hr/><h3>Selected Panel</h3><div className="property"><span>Model</span><strong>{module.model}</strong></div><div className="property"><span>Power</span><strong>{module.powerWatts} W</strong></div><div className="property"><span>Rotation</span><strong>{selected.rotation}°</strong></div></>}
+          <hr/>
+          {commercialReadiness ? <CommercialReadinessPanel readiness={commercialReadiness} /> : <div role="status" data-testid="commercial-readiness-unavailable" style={{ marginBottom: 12, fontSize: 12 }}><strong>Commercial readiness unavailable</strong><p>{commercialReadinessError ?? "Checking authoritative design, engineering, simulation and commercial lineage…"}</p></div>}
           <hr/><ProductionDashboard metrics={{ panelCount: panels.length, dcCapacityKw: production.dcCapacityKwp, roofAreaM2: context.roofAreaM2, annualKwh: production.annualKwh, shadingLossPct: production.shadingLossPct }} /><hr/><FinancialSummary metrics={financialMetrics} />
           {production.warnings.length > 0 && <div role="note" style={{ marginTop: 12, fontSize: 12 }}>{production.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
           {saveError && <div style={{ marginTop: 12, fontSize: 12 }}>{saveError}</div>}
