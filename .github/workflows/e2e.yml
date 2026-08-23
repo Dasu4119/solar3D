@@ -7,6 +7,7 @@ on:
       - 'shared/**'
       - 'src/shared/**'
       - 'engine/**'
+      - 'src/engine/**'
       - 'features/design/**'
       - 'src/features/design/**'
       - 'supabase/functions/solar-project-api/**'
@@ -23,6 +24,7 @@ on:
       - 'shared/**'
       - 'src/shared/**'
       - 'engine/**'
+      - 'src/engine/**'
       - 'features/design/**'
       - 'src/features/design/**'
       - 'supabase/functions/solar-project-api/**'
@@ -38,7 +40,7 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,6 +65,8 @@ jobs:
         run: npm run test:unit -- shared/api/__tests__/design-persistence-roof.test.ts
       - name: Run production dashboard metric tests
         run: npm run test:unit -- features/design/production-metrics.test.ts
+      - name: Run large-layout performance benchmark
+        run: npm run test:unit -- src/engine/solar/layout/__tests__/large-layout-performance.test.ts --reporter=verbose
       - name: Run persistence E2E
         env:
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
