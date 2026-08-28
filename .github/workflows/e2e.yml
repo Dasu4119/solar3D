@@ -48,6 +48,39 @@ jobs:
           node-version: 24
       - name: Install npm dependencies
         run: npm install
+      - name: Validate authenticated E2E configuration
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
+          E2E_STORAGE_STATE: ${{ secrets.E2E_STORAGE_STATE }}
+          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+          E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+          E2E_ORG_A_ACCESS_TOKEN: ${{ secrets.E2E_ORG_A_ACCESS_TOKEN }}
+          E2E_ORG_B_ACCESS_TOKEN: ${{ secrets.E2E_ORG_B_ACCESS_TOKEN }}
+          E2E_ORG_A_PROJECT_ID: ${{ secrets.E2E_ORG_A_PROJECT_ID }}
+          E2E_ORG_B_PROJECT_ID: ${{ secrets.E2E_ORG_B_PROJECT_ID }}
+          E2E_ORG_B_RESOURCE_IDS_JSON: ${{ secrets.E2E_ORG_B_RESOURCE_IDS_JSON }}
+        run: |
+          set -euo pipefail
+          required=(
+            E2E_BASE_URL
+            E2E_PROJECT_ID
+            E2E_STORAGE_STATE
+            E2E_SUPABASE_URL
+            E2E_SUPABASE_ANON_KEY
+            E2E_ORG_A_ACCESS_TOKEN
+            E2E_ORG_B_ACCESS_TOKEN
+            E2E_ORG_A_PROJECT_ID
+            E2E_ORG_B_PROJECT_ID
+            E2E_ORG_B_RESOURCE_IDS_JSON
+          )
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required authenticated E2E secret: ${name}" >&2
+              exit 1
+            fi
+          done
+          node -e 'JSON.parse(process.env.E2E_ORG_B_RESOURCE_IDS_JSON); console.log("Authenticated E2E configuration present")'
       - name: Cache Playwright Chromium
         uses: actions/cache@v4
         id: playwright-cache
