@@ -1,10 +1,16 @@
 import { test, expect } from '@playwright/test';
 
+const requireEnv = (name: string) => {
+  const value = process.env[name];
+  if (!value) throw new Error(`Required authenticated E2E environment variable is missing: ${name}`);
+  return value;
+};
+
 test.describe('design persistence and production acceptance', () => {
   test('save → refresh → load preserves canonical project, production, and financial state', async ({ page }) => {
-    const baseUrl = process.env.E2E_BASE_URL;
-    const projectId = process.env.E2E_PROJECT_ID;
-    test.skip(!baseUrl || !projectId || !process.env.E2E_STORAGE_STATE, 'Authenticated E2E environment is not configured');
+    const baseUrl = requireEnv('E2E_BASE_URL');
+    const projectId = requireEnv('E2E_PROJECT_ID');
+    requireEnv('E2E_STORAGE_STATE');
 
     await page.goto(`${baseUrl}/projects/${projectId}/design`);
     await page.waitForLoadState('networkidle');
