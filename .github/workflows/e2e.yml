@@ -80,3 +80,13 @@ jobs:
           E2E_ORG_B_PROJECT_ID: ${{ secrets.E2E_ORG_B_PROJECT_ID }}
           E2E_ORG_B_RESOURCE_IDS_JSON: ${{ secrets.E2E_ORG_B_RESOURCE_IDS_JSON }}
         run: npm run test:e2e -- --project=chromium
+      - name: Run authenticated organization isolation E2E
+        env:
+          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+          E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+          E2E_ORG_A_ACCESS_TOKEN: ${{ secrets.E2E_ORG_A_ACCESS_TOKEN }}
+          E2E_ORG_B_ACCESS_TOKEN: ${{ secrets.E2E_ORG_B_ACCESS_TOKEN }}
+          E2E_ORG_A_PROJECT_ID: ${{ secrets.E2E_ORG_A_PROJECT_ID }}
+          E2E_ORG_B_PROJECT_ID: ${{ secrets.E2E_ORG_B_PROJECT_ID }}
+          E2E_ORG_B_RESOURCE_IDS_JSON: ${{ secrets.E2E_ORG_B_RESOURCE_IDS_JSON }}
+        run: npm run test:e2e -- e2e/org-isolation.spec.ts --project=chromium
