@@ -1,8 +1,8 @@
 import { createSupabaseBrowserClient } from "@/shared/lib/supabase/browser";
 
-export async function invokeFunction<TResponse, TBody extends object = Record<string, unknown>>(
+export async function invokeFunction<TResponse>(
   functionName: string,
-  body: TBody,
+  body: object,
 ): Promise<TResponse> {
   const supabase = createSupabaseBrowserClient();
   const { data, error } = await supabase.functions.invoke<TResponse>(functionName, {
