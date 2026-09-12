@@ -128,7 +128,6 @@ export function generateSolarLayout(request: LayoutRequest): SolarLayoutResult {
     ? calculateFinancialValue({
         annualKwh: estimatedAnnualKwh ?? 0,
         systemCostUsd: request.financialObjective.systemCostUsd ?? 0,
-        systemCostUsdPerWatt: undefined,
         electricityRateUsdPerKwh: request.financialObjective.electricityRateUsdPerKwh,
         annualOpexUsd: request.financialObjective.annualOpexUsd,
         incentiveUsd: request.financialObjective.incentiveUsd,
