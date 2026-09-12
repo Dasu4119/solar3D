@@ -47,6 +47,9 @@ declare
   v_fin uuid;
   v_bom uuid;
   v_proposal uuid;
+  v_sim_hash text;
+  v_fin_hash text;
+  v_bom_hash text;
 begin
   if not exists (select 1 from public.ci_e2e_fixture_registry where id = true) then
     insert into public.organizations(name, slug)
@@ -87,40 +90,39 @@ begin
 
     insert into public.simulation_runs(
       design_version_id, run_number, status, engine_version, input_snapshot,
-      weather_source, assumptions, result_snapshot, result_hash, provenance_class, completed_at
+      weather_source, assumptions, result_snapshot, provenance_class, completed_at
     ) values (
       v_version, 1, 'completed', 'ci-fixture-1',
       '{"ci_fixture":true}'::jsonb, '{}'::jsonb, '{}'::jsonb,
-      '{"annual_kwh":1}'::jsonb, 'ci-simulation-result-hash', 'reference', now()
-    ) returning id into v_sim;
+      '{"annual_kwh":1}'::jsonb, 'reference', now()
+    ) returning id, result_hash into v_sim, v_sim_hash;
 
     insert into public.financial_runs(
       simulation_run_id, design_version_id, run_number, status, engine_version,
-      input_snapshot, result_snapshot, warnings, source_simulation_result_hash,
-      result_hash, completed_at
+      input_snapshot, result_snapshot, warnings, source_simulation_result_hash, completed_at
     ) values (
       v_sim, v_version, 1, 'completed', 'ci-fixture-1',
       '{"ci_fixture":true}'::jsonb, '{"npv":0}'::jsonb, '[]'::jsonb,
-      'ci-simulation-result-hash', 'ci-financial-result-hash', now()
-    ) returning id into v_fin;
+      v_sim_hash, now()
+    ) returning id, result_hash into v_fin, v_fin_hash;
 
     insert into public.bom_runs(
       financial_run_id, design_version_id, run_number, status, engine_version,
-      input_snapshot, result_snapshot, source_financial_result_hash, result_hash, completed_at
+      input_snapshot, result_snapshot, source_financial_result_hash, completed_at
     ) values (
       v_fin, v_version, 1, 'completed', 'ci-fixture-1',
       '{"ci_fixture":true}'::jsonb, '{"items":[]}'::jsonb,
-      'ci-financial-result-hash', 'ci-bom-result-hash', now()
-    ) returning id into v_bom;
+      v_fin_hash, now()
+    ) returning id, result_hash into v_bom, v_bom_hash;
 
     insert into public.proposal_runs(
       bom_run_id, financial_run_id, design_version_id, run_number, status,
       engine_version, input_snapshot, result_snapshot, source_bom_result_hash,
-      source_financial_result_hash, result_hash, completed_at
+      source_financial_result_hash, completed_at
     ) values (
       v_bom, v_fin, v_version, 1, 'completed', 'ci-fixture-1',
       '{"ci_fixture":true}'::jsonb, '{"proposal":true}'::jsonb,
-      'ci-bom-result-hash', 'ci-financial-result-hash', 'ci-proposal-result-hash', now()
+      v_bom_hash, v_fin_hash, now()
     ) returning id into v_proposal;
 
     insert into public.ci_e2e_fixture_registry(
