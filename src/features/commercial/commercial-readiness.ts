@@ -10,8 +10,8 @@ export function getCommercialReadiness(input: CommercialReadinessInput): Commerc
   if (!input.financialCompleted) blockers.push("Complete the financial run before generating a BOM or proposal.");
   if (input.simulationProvenance === "reference") warnings.push("Production uses reference yield data; this is not a bankable site/weather estimate.");
   else if (!input.simulationProvenance) warnings.push("Simulation provenance is not available.");
-  const canGenerateBom = blockers.length === 0 && Boolean(input.source?.designVersionId && input.source?.financialRunId);
-  const canGenerateProposal = canGenerateBom && input.bomAvailable && Boolean(input.source?.bomRunId);
+  const canGenerateBom = blockers.length === 0;
+  const canGenerateProposal = canGenerateBom && input.bomAvailable;
   const status: CommercialReadinessStatus = blockers.length > 0 ? "blocked" : warnings.length > 0 ? "warning" : "ready";
   return { status, steps: [
     { id: "design", label: "Design finalized", complete: input.designFinalized },
