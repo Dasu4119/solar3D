@@ -12,11 +12,10 @@ test.describe('design persistence and production acceptance', () => {
     const projectId = requireEnv('E2E_PROJECT_ID');
     requireEnv('E2E_STORAGE_STATE');
 
-    await page.goto(`${baseUrl}/projects/${projectId}/design`);
-    await page.waitForLoadState('networkidle');
+    await page.goto(`${baseUrl}/projects/${projectId}/design`, { waitUntil: 'domcontentloaded' });
 
     const state = page.locator('[data-testid="solar-design-state"]');
-    await expect(state).toHaveAttribute('data-project-id', projectId);
+    await expect(state).toHaveAttribute('data-project-id', projectId, { timeout: 15000 });
     await expect(state).toHaveAttribute('data-roof-id', /.+/);
     await expect(state).toHaveAttribute('data-module-id', /.+/);
     const before = await state.getAttribute('data-state');
@@ -37,8 +36,8 @@ test.describe('design persistence and production acceptance', () => {
     await save.click();
     await expect(page.getByText(/saved/i)).toBeVisible({ timeout: 10000 });
 
-    await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(state).toHaveAttribute('data-project-id', projectId, { timeout: 15000 });
 
     const after = await state.getAttribute('data-state');
     expect(after).toBe(before);
