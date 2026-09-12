@@ -105,11 +105,20 @@ jobs:
         run: |
           set -euo pipefail
           OIDC_TOKEN="$(curl -fsSL -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=solar3d-e2e" | jq -r '.value')"
-          RESPONSE="$(curl --fail-with-body -sS -X POST "${E2E_SUPABASE_URL}/functions/v1/ci-e2e-bootstrap" \
+          HTTP_STATUS="$(curl -sS -o bootstrap-response.json -w '%{http_code}' -X POST "${E2E_SUPABASE_URL}/functions/v1/ci-e2e-bootstrap" \
             -H "Authorization: Bearer ${OIDC_TOKEN}" \
             -H 'Content-Type: application/json' \
             --data '{"action":"bootstrap"}')"
 
+          if [ "${HTTP_STATUS}" -lt 200 ] || [ "${HTTP_STATUS}" -ge 300 ]; then
+            jq -c '{stage:(.stage // "unknown"),error:(.error // "bootstrap failed")}' bootstrap-response.json > next-e2e.log 2>/dev/null || printf '{"stage":"unknown","error":"non-json bootstrap failure","http_status":"%s"}\n' "${HTTP_STATUS}" > next-e2e.log
+            rm -f bootstrap-response.json
+            echo "OIDC bootstrap failed with HTTP ${HTTP_STATUS}" >&2
+            exit 1
+          fi
+
+          RESPONSE="$(cat bootstrap-response.json)"
+          rm -f bootstrap-response.json
           FIXTURE_ID="$(jq -r '.fixture_id' <<<"${RESPONSE}")"
           PROJECT_A="$(jq -r '.org_a.project_id' <<<"${RESPONSE}")"
           PROJECT_B="$(jq -r '.org_b.project_id' <<<"${RESPONSE}")"
@@ -120,10 +129,7 @@ jobs:
           RESOURCE_IDS="$(jq -c '.org_b_resource_ids' <<<"${RESPONSE}")"
           SESSION_SECRET="$(openssl rand -hex 32)"
 
-          for secret in "${TOKEN_A}" "${TOKEN_B}" "${PASSWORD_A}" "${SESSION_SECRET}"; do
-            echo "::add-mask::${secret}"
-          done
-
+          for secret in "${TOKEN_A}" "${TOKEN_B}" "${PASSWORD_A}" "${SESSION_SECRET}"; do echo "::add-mask::${secret}"; done
           {
             echo "E2E_FIXTURE_ID=${FIXTURE_ID}"
             echo "E2E_PROJECT_ID=${PROJECT_A}"
@@ -146,9 +152,7 @@ jobs:
           node - <<'NODE'
           const ids = JSON.parse(process.env.E2E_ORG_B_RESOURCE_IDS_JSON);
           const required = ['projects','sites','designs','roofs','panel_layouts','simulation_runs','financial_runs','bom_runs','proposal_runs'];
-          for (const table of required) {
-            if (!ids[table]) throw new Error(`E2E_ORG_B_RESOURCE_IDS_JSON missing ${table}`);
-          }
+          for (const table of required) if (!ids[table]) throw new Error(`E2E_ORG_B_RESOURCE_IDS_JSON missing ${table}`);
           console.log('GitHub-OIDC authenticated E2E fixture is complete');
           NODE
       - name: Cache Playwright Chromium
@@ -172,10 +176,7 @@ jobs:
           echo $! > next-e2e.pid
           for attempt in $(seq 1 60); do
             code="$(curl -sS -o /dev/null -w '%{http_code}' "${E2E_BASE_URL}/projects/${E2E_PROJECT_ID}/design" || true)"
-            if [ "${code}" != "000" ]; then
-              echo "Production app is reachable with HTTP ${code}"
-              exit 0
-            fi
+            if [ "${code}" != "000" ]; then echo "Production app is reachable with HTTP ${code}"; exit 0; fi
             sleep 1
           done
           cat next-e2e.log
@@ -200,10 +201,7 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          if [ -z "${E2E_FIXTURE_ID:-}" ]; then
-            echo "No E2E fixture was registered; nothing to clean"
-            exit 0
-          fi
+          if [ -z "${E2E_FIXTURE_ID:-}" ]; then echo "No E2E fixture was registered; nothing to clean"; exit 0; fi
           OIDC_TOKEN="$(curl -fsSL -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=solar3d-e2e" | jq -r '.value')"
           curl --fail-with-body -sS -X POST "${E2E_SUPABASE_URL}/functions/v1/ci-e2e-bootstrap" \
             -H "Authorization: Bearer ${OIDC_TOKEN}" \
