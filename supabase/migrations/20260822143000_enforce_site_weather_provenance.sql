@@ -1,5 +1,10 @@
 -- Site-weather simulations must carry enough metadata to reproduce the source observation.
 -- Reference and user-supplied simulations remain allowed, but are explicitly distinguished.
+-- provenance_class is introduced here as well as guarded by the later hardening migration so
+-- this timestamped migration is safe when replayed from a clean database.
+
+ALTER TABLE public.simulation_runs
+  ADD COLUMN IF NOT EXISTS provenance_class text NOT NULL DEFAULT 'reference';
 
 ALTER TABLE public.simulation_runs
   DROP CONSTRAINT IF EXISTS simulation_runs_site_weather_source_check;
