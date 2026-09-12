@@ -3,6 +3,7 @@ name: E2E Persistence
 on:
   pull_request:
     paths:
+      - 'app/api/e2e/**'
       - 'e2e/**'
       - 'shared/**'
       - 'src/shared/**'
@@ -24,6 +25,7 @@ on:
       - 'feat/p1e3-dashboard-production'
       - 'main'
     paths:
+      - 'app/api/e2e/**'
       - 'e2e/**'
       - 'shared/**'
       - 'src/shared/**'
@@ -44,6 +46,13 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+
+env:
+  E2E_BASE_URL: http://127.0.0.1:3000
+  E2E_STORAGE_STATE: playwright/.auth/solar3d-ci.json
+  E2E_SUPABASE_URL: https://dprsjuqcmfiroilrpvkw.supabase.co
+  E2E_SUPABASE_ANON_KEY: sb_publishable_hc9RL4clsz0T7cVykJKjZw_ZXYh6sYG
 
 jobs:
   e2e:
@@ -80,6 +89,9 @@ jobs:
       - name: Run large-layout performance benchmark
         run: npm run test:unit -- src/engine/solar/layout/__tests__/large-layout-performance.test.ts --reporter=verbose
       - name: Build production application
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.E2E_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.E2E_SUPABASE_ANON_KEY }}
         run: |
           set -o pipefail
           npm run build 2>&1 | tee production-build.log
@@ -89,23 +101,47 @@ jobs:
         with:
           name: production-build-diagnostics
           path: production-build.log
-      - name: Validate authenticated E2E configuration
-        env:
-          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
-          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
-          E2E_STORAGE_STATE: ${{ secrets.E2E_STORAGE_STATE }}
-          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
-          E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
-          E2E_ORG_A_ACCESS_TOKEN: ${{ secrets.E2E_ORG_A_ACCESS_TOKEN }}
-          E2E_ORG_B_ACCESS_TOKEN: ${{ secrets.E2E_ORG_B_ACCESS_TOKEN }}
-          E2E_ORG_A_PROJECT_ID: ${{ secrets.E2E_ORG_A_PROJECT_ID }}
-          E2E_ORG_B_PROJECT_ID: ${{ secrets.E2E_ORG_B_PROJECT_ID }}
-          E2E_ORG_B_RESOURCE_IDS_JSON: ${{ secrets.E2E_ORG_B_RESOURCE_IDS_JSON }}
+      - name: Bootstrap authenticated E2E fixture with GitHub OIDC
         run: |
           set -euo pipefail
-          required=(E2E_BASE_URL E2E_PROJECT_ID E2E_STORAGE_STATE E2E_SUPABASE_URL E2E_SUPABASE_ANON_KEY E2E_ORG_A_ACCESS_TOKEN E2E_ORG_B_ACCESS_TOKEN E2E_ORG_A_PROJECT_ID E2E_ORG_B_PROJECT_ID E2E_ORG_B_RESOURCE_IDS_JSON)
+          OIDC_TOKEN="$(curl -fsSL -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=solar3d-e2e" | jq -r '.value')"
+          RESPONSE="$(curl --fail-with-body -sS -X POST "${E2E_SUPABASE_URL}/functions/v1/ci-e2e-bootstrap" \
+            -H "Authorization: Bearer ${OIDC_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data '{"action":"bootstrap"}')"
+
+          FIXTURE_ID="$(jq -r '.fixture_id' <<<"${RESPONSE}")"
+          PROJECT_A="$(jq -r '.org_a.project_id' <<<"${RESPONSE}")"
+          PROJECT_B="$(jq -r '.org_b.project_id' <<<"${RESPONSE}")"
+          TOKEN_A="$(jq -r '.org_a.access_token' <<<"${RESPONSE}")"
+          TOKEN_B="$(jq -r '.org_b.access_token' <<<"${RESPONSE}")"
+          EMAIL_A="$(jq -r '.org_a.email' <<<"${RESPONSE}")"
+          PASSWORD_A="$(jq -r '.org_a.password' <<<"${RESPONSE}")"
+          RESOURCE_IDS="$(jq -c '.org_b_resource_ids' <<<"${RESPONSE}")"
+          SESSION_SECRET="$(openssl rand -hex 32)"
+
+          for secret in "${TOKEN_A}" "${TOKEN_B}" "${PASSWORD_A}" "${SESSION_SECRET}"; do
+            echo "::add-mask::${secret}"
+          done
+
+          {
+            echo "E2E_FIXTURE_ID=${FIXTURE_ID}"
+            echo "E2E_PROJECT_ID=${PROJECT_A}"
+            echo "E2E_ORG_A_PROJECT_ID=${PROJECT_A}"
+            echo "E2E_ORG_B_PROJECT_ID=${PROJECT_B}"
+            echo "E2E_ORG_A_ACCESS_TOKEN=${TOKEN_A}"
+            echo "E2E_ORG_B_ACCESS_TOKEN=${TOKEN_B}"
+            echo "E2E_ORG_A_EMAIL=${EMAIL_A}"
+            echo "E2E_ORG_A_PASSWORD=${PASSWORD_A}"
+            echo "E2E_ORG_B_RESOURCE_IDS_JSON=${RESOURCE_IDS}"
+            echo "E2E_SESSION_BOOTSTRAP_SECRET=${SESSION_SECRET}"
+          } >> "${GITHUB_ENV}"
+      - name: Validate authenticated E2E configuration
+        run: |
+          set -euo pipefail
+          required=(E2E_BASE_URL E2E_PROJECT_ID E2E_STORAGE_STATE E2E_SUPABASE_URL E2E_SUPABASE_ANON_KEY E2E_ORG_A_ACCESS_TOKEN E2E_ORG_B_ACCESS_TOKEN E2E_ORG_A_PROJECT_ID E2E_ORG_B_PROJECT_ID E2E_ORG_B_RESOURCE_IDS_JSON E2E_ORG_A_EMAIL E2E_ORG_A_PASSWORD E2E_SESSION_BOOTSTRAP_SECRET)
           for name in "${required[@]}"; do
-            if [ -z "${!name:-}" ]; then echo "Missing required authenticated E2E secret: ${name}" >&2; exit 1; fi
+            if [ -z "${!name:-}" ]; then echo "Missing required authenticated E2E value: ${name}" >&2; exit 1; fi
           done
           node - <<'NODE'
           const ids = JSON.parse(process.env.E2E_ORG_B_RESOURCE_IDS_JSON);
@@ -113,7 +149,7 @@ jobs:
           for (const table of required) {
             if (!ids[table]) throw new Error(`E2E_ORG_B_RESOURCE_IDS_JSON missing ${table}`);
           }
-          console.log('Authenticated E2E configuration present');
+          console.log('GitHub-OIDC authenticated E2E fixture is complete');
           NODE
       - name: Cache Playwright Chromium
         uses: actions/cache@v4
@@ -124,16 +160,52 @@ jobs:
       - name: Install Chromium browser binary
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium
-      - name: Run authenticated E2E suite
+      - name: Start production application for E2E
         env:
-          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
-          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
-          E2E_STORAGE_STATE: ${{ secrets.E2E_STORAGE_STATE }}
-          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
-          E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
-          E2E_ORG_A_ACCESS_TOKEN: ${{ secrets.E2E_ORG_A_ACCESS_TOKEN }}
-          E2E_ORG_B_ACCESS_TOKEN: ${{ secrets.E2E_ORG_B_ACCESS_TOKEN }}
-          E2E_ORG_A_PROJECT_ID: ${{ secrets.E2E_ORG_A_PROJECT_ID }}
-          E2E_ORG_B_PROJECT_ID: ${{ secrets.E2E_ORG_B_PROJECT_ID }}
-          E2E_ORG_B_RESOURCE_IDS_JSON: ${{ secrets.E2E_ORG_B_RESOURCE_IDS_JSON }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.E2E_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.E2E_SUPABASE_ANON_KEY }}
+          E2E_TEST_MODE: '1'
+          E2E_SESSION_BOOTSTRAP_SECRET: ${{ env.E2E_SESSION_BOOTSTRAP_SECRET }}
+        run: |
+          set -euo pipefail
+          npm start > next-e2e.log 2>&1 &
+          echo $! > next-e2e.pid
+          for attempt in $(seq 1 60); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' "${E2E_BASE_URL}/projects/${E2E_PROJECT_ID}/design" || true)"
+            if [ "${code}" != "000" ]; then
+              echo "Production app is reachable with HTTP ${code}"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat next-e2e.log
+          exit 1
+      - name: Run authenticated E2E suite
         run: npm run test:e2e -- --project=chromium
+      - name: Upload E2E diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authenticated-e2e-diagnostics
+          path: |
+            next-e2e.log
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+      - name: Stop production application
+        if: always()
+        run: |
+          if [ -f next-e2e.pid ]; then kill "$(cat next-e2e.pid)" 2>/dev/null || true; fi
+      - name: Cleanup authenticated E2E fixture
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -z "${E2E_FIXTURE_ID:-}" ]; then
+            echo "No E2E fixture was registered; nothing to clean"
+            exit 0
+          fi
+          OIDC_TOKEN="$(curl -fsSL -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=solar3d-e2e" | jq -r '.value')"
+          curl --fail-with-body -sS -X POST "${E2E_SUPABASE_URL}/functions/v1/ci-e2e-bootstrap" \
+            -H "Authorization: Bearer ${OIDC_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "{\"action\":\"cleanup\",\"fixture_id\":\"${E2E_FIXTURE_ID}\"}"
