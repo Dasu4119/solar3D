@@ -18,7 +18,12 @@ describe("roof plane intelligence", () => {
 
   it("validates physical roof-plane inputs", () => {
     expect(validateRoofPlane({ id: "ok", polygon: square, pitchDeg: 30, azimuthDeg: 180 })).toEqual([]);
-    expect(validateRoofPlane({ id: "bad", polygon: square.slice(0, 2), pitchDeg: 95, azimuthDeg: Number.NaN })).toHaveLength(3);
+    expect(validateRoofPlane({ id: "bad", polygon: square.slice(0, 2), pitchDeg: 95, azimuthDeg: Number.NaN })).toEqual([
+      "Roof plane requires at least 3 polygon points",
+      "Pitch must be between 0 and 90 degrees",
+      "Azimuth must be finite",
+      "Roof plane polygon must have non-zero area",
+    ]);
   });
 
   it("orders planes by area without mutating input", () => {
