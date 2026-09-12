@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { validateCanonicalGeometry } from './canonical-geometry';
+import { validateCanonicalGeometry, type CanonicalGeometry } from './canonical-geometry';
 
-const baseGeometry = {
-  schemaVersion: 1 as const,
+const baseGeometry: CanonicalGeometry = {
+  schemaVersion: 1,
   roofs: [{
     id: 'roof-1',
     polygon: { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }] },
