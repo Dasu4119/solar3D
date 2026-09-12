@@ -26,7 +26,7 @@ test.describe('design persistence and production acceptance', () => {
     const annualEnergy = production.getByText('Annual energy', { exact: true });
     await expect(annualEnergy).toBeVisible();
     await expect(annualEnergy.locator('..').getByText(/kWh$/)).toBeVisible();
-    await expect(production.getByText(/Reference specific yield|Run annual simulation/i)).toBeVisible();
+    await expect(page.getByRole('note').filter({ hasText: /reference specific yield/i })).toBeVisible();
 
     const financial = page.getByRole('region', { name: /financial summary/i });
     await expect(financial).toBeVisible();
