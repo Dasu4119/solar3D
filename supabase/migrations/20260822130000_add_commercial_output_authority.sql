@@ -43,9 +43,11 @@ create table public.proposal_runs (
 
 create index idx_bom_runs_financial on public.bom_runs(financial_run_id);
 create index idx_bom_runs_version on public.bom_runs(design_version_id);
+create index idx_bom_runs_created_by on public.bom_runs(created_by);
 create index idx_proposal_runs_bom on public.proposal_runs(bom_run_id);
 create index idx_proposal_runs_financial on public.proposal_runs(financial_run_id);
 create index idx_proposal_runs_version on public.proposal_runs(design_version_id);
+create index idx_proposal_runs_created_by on public.proposal_runs(created_by);
 
 alter table public.bom_runs enable row level security;
 alter table public.proposal_runs enable row level security;
@@ -55,7 +57,7 @@ create policy bom_runs_select_org_member on public.bom_runs for select to authen
 );
 
 create policy bom_runs_insert_org_member on public.bom_runs for insert to authenticated with check (
-  created_by = auth.uid()
+  created_by = (select auth.uid())
   and design_version_id = (select fr.design_version_id from public.financial_runs fr where fr.id = bom_runs.financial_run_id and fr.status = 'completed')
   and source_financial_result_hash = (select fr.result_hash from public.financial_runs fr where fr.id = bom_runs.financial_run_id and fr.status = 'completed')
   and exists (select 1 from public.design_versions dv join public.designs d on d.id = dv.design_id join public.projects p on p.id = d.project_id where dv.id = bom_runs.design_version_id and dv.status = 'finalized' and public.is_org_member(p.organization_id))
@@ -66,7 +68,7 @@ create policy proposal_runs_select_org_member on public.proposal_runs for select
 );
 
 create policy proposal_runs_insert_org_member on public.proposal_runs for insert to authenticated with check (
-  created_by = auth.uid()
+  created_by = (select auth.uid())
   and design_version_id = (select br.design_version_id from public.bom_runs br where br.id = proposal_runs.bom_run_id and br.status = 'completed')
   and financial_run_id = (select br.financial_run_id from public.bom_runs br where br.id = proposal_runs.bom_run_id and br.status = 'completed')
   and source_bom_result_hash = (select br.result_hash from public.bom_runs br where br.id = proposal_runs.bom_run_id and br.status = 'completed')
