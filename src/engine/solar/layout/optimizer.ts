@@ -127,7 +127,7 @@ export function generateSolarLayout(request: LayoutRequest): SolarLayoutResult {
   const estimatedFinancial = request.financialObjective
     ? calculateFinancialValue({
         annualKwh: estimatedAnnualKwh ?? 0,
-        systemCostUsd: request.financialObjective.systemCostUsd,
+        systemCostUsd: request.financialObjective.systemCostUsd ?? 0,
         systemCostUsdPerWatt: undefined,
         electricityRateUsdPerKwh: request.financialObjective.electricityRateUsdPerKwh,
         annualOpexUsd: request.financialObjective.annualOpexUsd,
