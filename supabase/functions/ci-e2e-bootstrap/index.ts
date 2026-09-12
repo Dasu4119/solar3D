@@ -9,6 +9,7 @@ const REPOSITORY = "Dasu4119/solar3D";
 const ACTOR_ID = "248278589";
 const JWKS = createRemoteJWKSet(new URL(`${ISSUER}/.well-known/jwks`));
 const out = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function env(name: string) {
   const value = Deno.env.get(name);
@@ -33,6 +34,26 @@ async function verifyGitHubOidc(req: Request) {
   }
 }
 
+async function findUserByEmail(service: SupabaseClient, email: string) {
+  for (let page = 1; page <= 5; page += 1) {
+    const { data, error } = await service.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw error;
+    const user = data.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
+    if (user) return user;
+    if (data.users.length < 200) break;
+  }
+  return null;
+}
+
+async function deleteUserByEmail(service: SupabaseClient, email: string) {
+  try {
+    const user = await findUserByEmail(service, email);
+    if (user) await service.auth.admin.deleteUser(user.id);
+  } catch {
+    // Best-effort cleanup only. A later CI run can safely reuse its own deterministic email.
+  }
+}
+
 async function cleanupRun(service: SupabaseClient, run: any, orgBId: string) {
   if (!run) return;
   await service.from("organization_members").delete().eq("organization_id", orgBId).eq("user_id", run.user_b_id);
@@ -52,22 +73,61 @@ async function makeUser(service: SupabaseClient, label: "a" | "b", fixtureId: st
   const compact = fixtureId.replaceAll("-", "");
   const email = `solar3d-ci-${label}-${compact}@example.com`;
   const password = `Ci!${crypto.randomUUID()}9aA`;
-  const data = must(await service.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    app_metadata: { ci_fixture_id: fixtureId },
-    user_metadata: { ci_fixture: true },
-  }), `create CI user ${label}`);
-  if (!data.user) throw new Error(`create CI user ${label}: no user`);
-  return { id: data.user.id, email, password };
+  let lastError = "unknown Auth error";
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const existing = await findUserByEmail(service, email).catch(() => null);
+    if (existing) {
+      const { data, error } = await service.auth.admin.updateUserById(existing.id, {
+        password,
+        email_confirm: true,
+        app_metadata: { ...(existing.app_metadata ?? {}), ci_fixture_id: fixtureId },
+        user_metadata: { ...(existing.user_metadata ?? {}), ci_fixture: true },
+      });
+      if (!error && data.user) return { id: data.user.id, email, password };
+      lastError = error?.message ?? "Unable to normalize recovered CI user";
+    } else {
+      const { data, error } = await service.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        app_metadata: { ci_fixture_id: fixtureId },
+        user_metadata: { ci_fixture: true },
+      });
+      if (!error && data.user) return { id: data.user.id, email, password };
+      lastError = error?.message ?? `create CI user ${label} returned no user`;
+
+      // A gateway timeout can occur after GoTrue committed the user. Recover it by email.
+      const recovered = await findUserByEmail(service, email).catch(() => null);
+      if (recovered) {
+        const { data: normalized, error: normalizeError } = await service.auth.admin.updateUserById(recovered.id, {
+          password,
+          email_confirm: true,
+          app_metadata: { ...(recovered.app_metadata ?? {}), ci_fixture_id: fixtureId },
+          user_metadata: { ...(recovered.user_metadata ?? {}), ci_fixture: true },
+        });
+        if (!normalizeError && normalized.user) return { id: normalized.user.id, email, password };
+        lastError = normalizeError?.message ?? lastError;
+      }
+    }
+
+    if (attempt < 4) await sleep(750 * 2 ** (attempt - 1));
+  }
+
+  await deleteUserByEmail(service, email);
+  throw new Error(`create CI user ${label} failed after retries: ${lastError}`);
 }
 
 async function signIn(url: string, anonKey: string, email: string, password: string) {
   const client = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
-  if (error || !data.session?.access_token) throw new Error(`CI sign-in failed: ${error?.message ?? "no access token"}`);
-  return data.session.access_token;
+  let lastError = "no access token";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (!error && data.session?.access_token) return data.session.access_token;
+    lastError = error?.message ?? "no access token";
+    if (attempt < 3) await sleep(500 * 2 ** (attempt - 1));
+  }
+  throw new Error(`CI sign-in failed after retries: ${lastError}`);
 }
 
 Deno.serve(async (req) => {
@@ -104,6 +164,8 @@ Deno.serve(async (req) => {
     await cleanupStale(service, registry.organization_id);
 
     const fixtureId = crypto.randomUUID();
+    const emailA = `solar3d-ci-a-${fixtureId.replaceAll("-", "")}@example.com`;
+    const emailB = `solar3d-ci-b-${fixtureId.replaceAll("-", "")}@example.com`;
     let userA: any = null;
     let userB: any = null;
     let orgAId: string | null = null;
@@ -147,7 +209,9 @@ Deno.serve(async (req) => {
       if (orgAId) await service.from("organizations").delete().eq("id", orgAId);
       if (userB) await service.from("organization_members").delete().eq("organization_id", registry.organization_id).eq("user_id", userB.id);
       if (userA) await service.auth.admin.deleteUser(userA.id).catch(() => undefined);
+      else await deleteUserByEmail(service, emailA);
       if (userB) await service.auth.admin.deleteUser(userB.id).catch(() => undefined);
+      else await deleteUserByEmail(service, emailB);
       throw error;
     }
   } catch (error) {
