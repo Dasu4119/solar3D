@@ -223,7 +223,7 @@ Deno.serve(async (req) => {
           dc_capacity_kw: Number(b.dc_capacity_kw ?? 0),
           optimization_score: b.optimization_score ?? null,
         }).eq("id", layout.id);
-        if (lu.error) throw lu.error;
+        if (lu) throw lu;
         const { error: pd } = await db.from("panel_placements").delete().eq("panel_layout_id", layout.id);
         if (pd) throw pd;
       } else if (placements.length || b.create_empty_layout) {
