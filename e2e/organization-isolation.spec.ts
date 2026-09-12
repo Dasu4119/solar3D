@@ -70,11 +70,11 @@ test.describe('authenticated organization isolation', () => {
     const orgBProjectId = required('E2E_ORG_B_PROJECT_ID');
 
     const aOwn = await restRequest(baseUrl, anonKey, orgAToken, 'projects', orgAProjectId);
-    expect(aOwn.ok()).toBeTruthy();
+    expect(aOwn.ok).toBeTruthy();
     expect(await aOwn.json()).toHaveLength(1);
 
     const bOwn = await restRequest(baseUrl, anonKey, orgBToken, 'projects', orgBProjectId);
-    expect(bOwn.ok()).toBeTruthy();
+    expect(bOwn.ok).toBeTruthy();
     expect(await bOwn.json()).toHaveLength(1);
 
     await expectNoVisibleRows(
@@ -98,7 +98,7 @@ test.describe('authenticated organization isolation', () => {
       const id = ids[table];
 
       const ownerRead = await restRequest(baseUrl, anonKey, orgBToken, table, id);
-      expect(ownerRead.ok(), `${table}: Org B cannot read its own fixture`).toBeTruthy();
+      expect(ownerRead.ok, `${table}: Org B cannot read its own fixture`).toBeTruthy();
       const ownerRows = await ownerRead.json();
       expect(ownerRows, `${table}: owner fixture must contain exactly one row`).toHaveLength(1);
 
@@ -113,7 +113,7 @@ test.describe('authenticated organization isolation', () => {
       );
 
       const verifyOwnerRead = await restRequest(baseUrl, anonKey, orgBToken, table, id);
-      expect(verifyOwnerRead.ok(), `${table}: owner row unavailable after attack`).toBeTruthy();
+      expect(verifyOwnerRead.ok, `${table}: owner row unavailable after attack`).toBeTruthy();
       expect(await verifyOwnerRead.json(), `${table}: owner row changed/disappeared`).toHaveLength(1);
     }
   });
