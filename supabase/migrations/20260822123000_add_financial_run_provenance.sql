@@ -20,6 +20,7 @@ create table public.financial_runs (
 
 create index idx_financial_runs_simulation on public.financial_runs(simulation_run_id);
 create index idx_financial_runs_version on public.financial_runs(design_version_id);
+create index idx_financial_runs_created_by on public.financial_runs(created_by);
 create index idx_financial_runs_created_at on public.financial_runs(created_at desc);
 
 alter table public.financial_runs enable row level security;
