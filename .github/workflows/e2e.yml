@@ -10,10 +10,12 @@ on:
       - 'src/engine/**'
       - 'features/design/**'
       - 'src/features/design/**'
+      - 'src/features/commercial/**'
       - 'supabase/functions/**'
       - 'supabase/migrations/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
+      - 'tsconfig.json'
       - '.github/workflows/e2e.yml'
       - 'package.json'
       - 'package-lock.json'
@@ -29,10 +31,12 @@ on:
       - 'src/engine/**'
       - 'features/design/**'
       - 'src/features/design/**'
+      - 'src/features/commercial/**'
       - 'supabase/functions/**'
       - 'supabase/migrations/**'
       - 'vitest.config.*'
       - 'playwright.config.*'
+      - 'tsconfig.json'
       - '.github/workflows/e2e.yml'
       - 'package.json'
       - 'package-lock.json'
@@ -64,11 +68,27 @@ jobs:
           name: typecheck-diagnostics
           path: typecheck.log
       - name: Run complete unit suite
-        run: npm run test:unit
+        run: |
+          set -o pipefail
+          npm run test:unit -- --reporter=verbose 2>&1 | tee unit-tests.log
+      - name: Upload unit-test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-diagnostics
+          path: unit-tests.log
       - name: Run large-layout performance benchmark
         run: npm run test:unit -- src/engine/solar/layout/__tests__/large-layout-performance.test.ts --reporter=verbose
       - name: Build production application
-        run: npm run build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee production-build.log
+      - name: Upload production-build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-build-diagnostics
+          path: production-build.log
       - name: Validate authenticated E2E configuration
         env:
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
