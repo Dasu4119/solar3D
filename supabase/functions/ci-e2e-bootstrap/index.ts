@@ -51,7 +51,7 @@ async function cleanupStale(service: SupabaseClient, orgBId: string) {
 async function makeUser(service: SupabaseClient, label: "a" | "b", fixtureId: string) {
   const compact = fixtureId.replaceAll("-", "");
   const email = `solar3d-ci-${label}-${compact}@example.com`;
-  const password = `Ci!${crypto.randomUUID()}-${crypto.randomUUID()}9aA`;
+  const password = `Ci!${crypto.randomUUID()}9aA`;
   const data = must(await service.auth.admin.createUser({
     email,
     password,
@@ -85,10 +85,8 @@ Deno.serve(async (req) => {
 
     stage = "verify_github_oidc";
     await verifyGitHubOidc(req);
-
     stage = "parse_request";
     const body = await req.json().catch(() => ({}));
-
     stage = "load_registry";
     registry = must(await service.from("ci_e2e_fixture_registry").select("*").eq("id", true).single(), "load permanent CI fixture");
 
@@ -102,7 +100,6 @@ Deno.serve(async (req) => {
     }
 
     if (body.action !== "bootstrap") return out({ error: "Unknown action" }, 400);
-
     stage = "cleanup_stale";
     await cleanupStale(service, registry.organization_id);
 
@@ -116,113 +113,36 @@ Deno.serve(async (req) => {
       userA = await makeUser(service, "a", fixtureId);
       stage = "create_user_b";
       userB = await makeUser(service, "b", fixtureId);
-
       stage = "create_org_a";
       const orgA = must(await service.from("organizations").insert({
         name: `Solar3D CI Org A ${fixtureId}`,
         slug: `__solar3d_ci_a_${fixtureId.replaceAll("-", "")}__`,
       }).select().single(), "create Org A");
       orgAId = orgA.id;
-
       stage = "create_memberships";
       must(await service.from("organization_members").insert({ organization_id: orgA.id, user_id: userA.id, role: "owner" }).select().single(), "add Org A owner");
       must(await service.from("organization_members").insert({ organization_id: registry.organization_id, user_id: userB.id, role: "owner" }).select().single(), "add Org B owner");
-
       stage = "create_project_a";
-      const projectA = must(await service.from("projects").insert({
-        organization_id: orgA.id,
-        name: `Solar3D CI Project A ${fixtureId}`,
-        status: "draft",
-        country: "India",
-        notes: "Ephemeral GitHub OIDC release-gate fixture",
-      }).select().single(), "create Project A");
-
+      const projectA = must(await service.from("projects").insert({ organization_id: orgA.id, name: `Solar3D CI Project A ${fixtureId}`, status: "draft", country: "India", notes: "Ephemeral GitHub OIDC release-gate fixture" }).select().single(), "create Project A");
       stage = "create_site_a";
-      const siteA = must(await service.from("sites").insert({
-        project_id: projectA.id,
-        name: "CI Org A Site",
-        latitude: 16.3067,
-        longitude: 80.4365,
-      }).select().single(), "create Site A");
-
+      const siteA = must(await service.from("sites").insert({ project_id: projectA.id, name: "CI Org A Site", latitude: 16.3067, longitude: 80.4365 }).select().single(), "create Site A");
       stage = "create_design_a";
-      const designA = must(await service.from("designs").insert({
-        project_id: projectA.id,
-        site_id: siteA.id,
-        name: "CI Org A Design",
-        status: "draft",
-      }).select().single(), "create Design A");
-
+      const designA = must(await service.from("designs").insert({ project_id: projectA.id, site_id: siteA.id, name: "CI Org A Design", status: "draft" }).select().single(), "create Design A");
       stage = "create_version_a";
-      const versionA = must(await service.from("design_versions").insert({
-        design_id: designA.id,
-        version_number: 1,
-        name: "CI Org A v1",
-        change_summary: "Ephemeral browser persistence fixture",
-        geometry: {},
-        metrics: {},
-        created_by: userA.id,
-        status: "draft",
-      }).select().single(), "create Design Version A");
-
+      const versionA = must(await service.from("design_versions").insert({ design_id: designA.id, version_number: 1, name: "CI Org A v1", change_summary: "Ephemeral browser persistence fixture", geometry: {}, metrics: {}, created_by: userA.id, status: "draft" }).select().single(), "create Design Version A");
       stage = "create_roof_a";
-      const roofA = must(await service.from("roofs").insert({
-        design_id: designA.id,
-        name: "CI Org A Roof",
-        geometry: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }],
-        area_m2: 60,
-        elevation_m: 0,
-        pitch_degrees: 0,
-        azimuth_degrees: 180,
-        roof_type: "flat",
-      }).select().single(), "create Roof A");
-
+      const roofA = must(await service.from("roofs").insert({ design_id: designA.id, name: "CI Org A Roof", geometry: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }], area_m2: 60, elevation_m: 0, pitch_degrees: 0, azimuth_degrees: 180, roof_type: "flat" }).select().single(), "create Roof A");
       stage = "create_layout_a";
-      const layoutA = must(await service.from("panel_layouts").insert({
-        design_version_id: versionA.id,
-        roof_id: roofA.id,
-        module_id: null,
-        panel_count: 0,
-        dc_capacity_kw: 0,
-        setback_m: 0.3,
-      }).select().single(), "create Layout A");
-
+      const layoutA = must(await service.from("panel_layouts").insert({ design_version_id: versionA.id, roof_id: roofA.id, module_id: null, panel_count: 0, dc_capacity_kw: 0, setback_m: 0.3 }).select().single(), "create Layout A");
       stage = "activate_design_a";
       must(await service.from("design_versions").update({ active_layout_id: layoutA.id }).eq("id", versionA.id).select().single(), "activate Layout A");
       must(await service.from("designs").update({ active_version_id: versionA.id, draft_version_id: versionA.id }).eq("id", designA.id).select().single(), "activate Version A");
-
       stage = "register_run";
-      must(await service.from("ci_e2e_runs").insert({
-        fixture_id: fixtureId,
-        organization_a_id: orgA.id,
-        user_a_id: userA.id,
-        user_b_id: userB.id,
-      }).select().single(), "register CI run");
-
+      must(await service.from("ci_e2e_runs").insert({ fixture_id: fixtureId, organization_a_id: orgA.id, user_a_id: userA.id, user_b_id: userB.id }).select().single(), "register CI run");
       stage = "sign_in_users";
-      const [tokenA, tokenB] = await Promise.all([
-        signIn(url, anonKey, userA.email, userA.password),
-        signIn(url, anonKey, userB.email, userB.password),
-      ]);
-
+      const [tokenA, tokenB] = await Promise.all([signIn(url, anonKey, userA.email, userA.password), signIn(url, anonKey, userB.email, userB.password)]);
       stage = "complete";
-      return out({
-        success: true,
-        fixture_id: fixtureId,
-        org_a: { user_id: userA.id, email: userA.email, password: userA.password, access_token: tokenA, project_id: projectA.id },
-        org_b: { user_id: userB.id, email: userB.email, password: userB.password, access_token: tokenB, project_id: registry.project_id },
-        org_b_resource_ids: {
-          projects: registry.project_id,
-          sites: registry.site_id,
-          designs: registry.design_id,
-          roofs: registry.roof_id,
-          panel_layouts: registry.panel_layout_id,
-          simulation_runs: registry.simulation_run_id,
-          financial_runs: registry.financial_run_id,
-          bom_runs: registry.bom_run_id,
-          proposal_runs: registry.proposal_run_id,
-        },
-      });
+      return out({ success: true, fixture_id: fixtureId, org_a: { user_id: userA.id, email: userA.email, password: userA.password, access_token: tokenA, project_id: projectA.id }, org_b: { user_id: userB.id, email: userB.email, password: userB.password, access_token: tokenB, project_id: registry.project_id }, org_b_resource_ids: { projects: registry.project_id, sites: registry.site_id, designs: registry.design_id, roofs: registry.roof_id, panel_layouts: registry.panel_layout_id, simulation_runs: registry.simulation_run_id, financial_runs: registry.financial_run_id, bom_runs: registry.bom_run_id, proposal_runs: registry.proposal_run_id } });
     } catch (error) {
       if (orgAId) await service.from("organizations").delete().eq("id", orgAId);
       if (userB) await service.from("organization_members").delete().eq("organization_id", registry.organization_id).eq("user_id", userB.id);
@@ -233,10 +153,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(stage, message);
-    if (service) {
-      await service.from("ci_e2e_diagnostics").insert({ stage, message: message.slice(0, 1000) }).catch(() => undefined);
-    }
-    const authError = stage === "verify_github_oidc";
-    return out({ error: message, stage }, authError ? 403 : 500);
+    if (service) await service.from("ci_e2e_diagnostics").insert({ stage, message: message.slice(0, 1000) }).catch(() => undefined);
+    return out({ error: message, stage }, stage === "verify_github_oidc" ? 403 : 500);
   }
 });
