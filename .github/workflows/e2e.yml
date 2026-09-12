@@ -54,7 +54,15 @@ jobs:
       - name: Install locked npm dependencies
         run: npm ci
       - name: Typecheck
-        run: npm run typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
+      - name: Upload compiler diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
       - name: Run complete unit suite
         run: npm run test:unit
       - name: Run large-layout performance benchmark
