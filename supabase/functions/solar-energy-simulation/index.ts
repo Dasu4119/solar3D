@@ -8,17 +8,13 @@ const headers = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
 };
-
-const json = (data: unknown, status = 200) =>
-  new Response(JSON.stringify(data), { status, headers });
-
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers });
 const ENGINE_NAME = "solar3d-production";
-const ENGINE_VERSION = "2026.08.p1.2";
+const ENGINE_VERSION = "2026.09.rc.1";
 const MONTHLY_SHARES = [0.075, 0.073, 0.085, 0.085, 0.09, 0.085, 0.09, 0.09, 0.085, 0.08, 0.075, 0.082];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers });
-
   try {
     const url = Deno.env.get("SUPABASE_URL");
     const key = Deno.env.get("SUPABASE_ANON_KEY");
@@ -27,8 +23,7 @@ Deno.serve(async (req) => {
     if (!auth) return json({ error: "Authorization header required" }, 401);
 
     const sb = createClient(url, key, { global: { headers: { Authorization: auth } } });
-    const token = auth.replace(/^Bearer\s+/i, "");
-    const { data: { user }, error: authError } = await sb.auth.getUser(token);
+    const { data: { user }, error: authError } = await sb.auth.getUser(auth.replace(/^Bearer\s+/i, ""));
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
     const body = await req.json();
@@ -37,7 +32,7 @@ Deno.serve(async (req) => {
 
     const { data: designVersion, error: designVersionError } = await sb
       .from("design_versions")
-      .select("id,design_id,status,content_hash")
+      .select("id,design_id,status,content_hash,active_layout_id")
       .eq("id", designVersionId)
       .maybeSingle();
     if (designVersionError) throw designVersionError;
@@ -101,11 +96,13 @@ Deno.serve(async (req) => {
     const performanceRatio = Number(body.performance_ratio ?? 0.8);
     const degradation = Number(body.annual_degradation_percent ?? 0.5);
     const years = Math.min(30, Math.max(1, Math.floor(Number(body.years ?? 25))));
-
-    if (!Number.isFinite(annualIrradiance) || annualIrradiance < 0) return json({ error: "annual_irradiance_kwh_m2 must be a non-negative number" }, 400);
-    if (!Number.isFinite(performanceRatio) || performanceRatio < 0 || performanceRatio > 1) return json({ error: "performance_ratio must be between 0 and 1" }, 400);
+    if (!Number.isFinite(annualIrradiance) || annualIrradiance <= 0) return json({ error: "annual_irradiance_kwh_m2 must be positive" }, 400);
+    if (!Number.isFinite(performanceRatio) || performanceRatio <= 0 || performanceRatio > 1) return json({ error: "performance_ratio must be between 0 and 1" }, 400);
     if (!Number.isFinite(degradation) || degradation < 0 || degradation > 100) return json({ error: "annual_degradation_percent must be between 0 and 100" }, 400);
 
+    // Site/weather production is upstream of engineering acceptance. Capacity may
+    // therefore come from the immutable active layout when no engineering result
+    // exists yet. Once engineering exists it remains the preferred authority.
     const { data: engineering, error: engineeringError } = await sb
       .from("engineering_results")
       .select("system_capacity_kw")
@@ -114,9 +111,23 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle();
     if (engineeringError) throw engineeringError;
-    if (!engineering?.system_capacity_kw) return json({ error: "No engineering result exists for this design version" }, 400);
 
-    const capacity = Number(engineering.system_capacity_kw);
+    const { data: layout, error: layoutError } = await sb
+      .from("panel_layouts")
+      .select("id,dc_capacity_kw")
+      .eq("design_version_id", designVersionId)
+      .eq("id", designVersion.active_layout_id)
+      .maybeSingle();
+    if (layoutError) throw layoutError;
+
+    const engineeringCapacity = Number(engineering?.system_capacity_kw ?? 0);
+    const layoutCapacity = Number(layout?.dc_capacity_kw ?? 0);
+    const capacity = engineeringCapacity > 0 ? engineeringCapacity : layoutCapacity;
+    const capacitySource = engineeringCapacity > 0 ? "engineering_result" : "active_layout";
+    if (!Number.isFinite(capacity) || capacity <= 0) {
+      return json({ error: "A positive active-layout or engineering system capacity is required" }, 400);
+    }
+
     const base = capacity * annualIrradiance * performanceRatio;
     const annual = Array.from({ length: years }, (_, index) => {
       const factor = Math.pow(1 - degradation / 100, index);
@@ -124,17 +135,12 @@ Deno.serve(async (req) => {
     });
     const monthly = MONTHLY_SHARES.map((share, index) => ({ month: index + 1, energy_kwh: Number((base * share).toFixed(0)) }));
     const lifetime = annual.reduce((sum, item) => sum + item.energy_kwh, 0);
-
-    const assumptions = {
-      annual_irradiance_kwh_m2: annualIrradiance,
-      performance_ratio: performanceRatio,
-      annual_degradation_percent: degradation,
-      years,
-    };
+    const assumptions = { annual_irradiance_kwh_m2: annualIrradiance, performance_ratio: performanceRatio, annual_degradation_percent: degradation, years };
     const inputSnapshot = {
       design_version_id: designVersionId,
       design_content_hash: designVersion.content_hash,
       system_capacity_kw: capacity,
+      capacity_source: capacitySource,
       provenance_class: provenanceClass,
       ...assumptions,
     };
@@ -155,26 +161,21 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (lastRunError) throw lastRunError;
 
-    const runNumber = Number(lastRun?.run_number ?? 0) + 1;
-    const { data: run, error: runError } = await sb
-      .from("simulation_runs")
-      .insert({
-        design_version_id: designVersionId,
-        design_content_hash: designVersion.content_hash,
-        provenance_class: provenanceClass,
-        run_number: runNumber,
-        status: "completed",
-        engine_name: ENGINE_NAME,
-        engine_version: ENGINE_VERSION,
-        input_snapshot: inputSnapshot,
-        weather_source: weatherSource,
-        assumptions,
-        result_snapshot: resultSnapshot,
-        created_by: user.id,
-        completed_at: new Date().toISOString(),
-      })
-      .select("id,run_number,engine_name,engine_version,design_content_hash,provenance_class,input_hash,result_hash,weather_source,created_at,completed_at")
-      .single();
+    const { data: run, error: runError } = await sb.from("simulation_runs").insert({
+      design_version_id: designVersionId,
+      design_content_hash: designVersion.content_hash,
+      provenance_class: provenanceClass,
+      run_number: Number(lastRun?.run_number ?? 0) + 1,
+      status: "completed",
+      engine_name: ENGINE_NAME,
+      engine_version: ENGINE_VERSION,
+      input_snapshot: inputSnapshot,
+      weather_source: weatherSource,
+      assumptions,
+      result_snapshot: resultSnapshot,
+      created_by: user.id,
+      completed_at: new Date().toISOString(),
+    }).select("id,run_number,engine_name,engine_version,design_content_hash,provenance_class,input_hash,result_hash,weather_source,created_at,completed_at").single();
     if (runError) throw runError;
 
     return json({
@@ -184,7 +185,7 @@ Deno.serve(async (req) => {
       provenance: { class: provenanceClass, design_content_hash: designVersion.content_hash, weather_source: weatherSource },
       engine: { name: ENGINE_NAME, version: ENGINE_VERSION },
       assumptions,
-      summary: { dc_capacity_kw: capacity, year_1_energy_kwh: annual[0].energy_kwh, lifetime_energy_kwh: Number(lifetime.toFixed(0)) },
+      summary: { dc_capacity_kw: capacity, capacity_source: capacitySource, year_1_energy_kwh: annual[0].energy_kwh, lifetime_energy_kwh: Number(lifetime.toFixed(0)) },
       monthly,
       annual,
     });
