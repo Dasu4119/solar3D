@@ -20,7 +20,6 @@ set search_path = public, private, pg_temp
 as $$
 declare
   v_version public.design_versions;
-  v_design public.designs;
   v_org_id uuid;
 begin
   select * into v_version
@@ -32,8 +31,8 @@ begin
     raise exception 'Design version not found';
   end if;
 
-  select d.*, p.organization_id
-  into v_design, v_org_id
+  select p.organization_id
+  into v_org_id
   from public.designs d
   join public.projects p on p.id = d.project_id
   where d.id = v_version.design_id;
