@@ -9,6 +9,19 @@ const cors = {
 };
 
 const out = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
+const errorBody = (error: unknown) => {
+  if (error instanceof Error) return { error: error.message };
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    return {
+      error: String(value.message ?? value.error ?? "Database operation failed"),
+      code: value.code ?? null,
+      details: value.details ?? null,
+      hint: value.hint ?? null,
+    };
+  }
+  return { error: String(error) };
+};
 
 async function sha256(value: unknown) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -91,7 +104,7 @@ Deno.serve(async (req) => {
       : (layouts ?? [])[0];
     if (!layout?.id || !layout.module_id || !layout.roof_id) return out({ error: "An active panel layout with roof and module identity is required" }, 422);
 
-    const { data: placements, error: placementError } = await db.from("panel_placements").select("id,panel_index").eq("panel_layout_id", layout.id).order("panel_index", { ascending: true });
+    const { data: placements, error: placementError } = await db.from("panel_placements").select("id,panel_index,string_number").eq("panel_layout_id", layout.id).order("panel_index", { ascending: true });
     if (placementError) throw placementError;
     const panelCount = placements?.length ?? 0;
     if (panelCount < 1 || panelCount !== Number(layout.panel_count ?? 0)) return out({ error: "Persisted panel placements must match the active layout panel count" }, 422);
@@ -123,7 +136,7 @@ Deno.serve(async (req) => {
 
     const coldTempC = Number(body.cold_temp_c ?? -10);
     const hotTempC = Number(body.hot_temp_c ?? 70);
-    const coldFactor = 1 + Math.max(-0.004, Math.min(0, (coldTempC - 25) * -0.003));
+    const coldFactor = 1 + Math.max(0, Math.min(0.30, (25 - coldTempC) * 0.003));
     const hotFactor = 1 - Math.max(0, Math.min(0.30, (hotTempC - 25) * 0.003));
     const minSeries = Math.max(1, Math.ceil(Number(inverter.mppt_min_voltage_v) / (vmp * hotFactor)));
     const maxSeries = Math.max(1, Math.floor(Math.min(
@@ -139,18 +152,26 @@ Deno.serve(async (req) => {
       return out({ error: `Panel count ${panelCount} cannot be distributed into safe strings of ${minSeries}-${maxSeries} modules` }, 422);
     }
 
+    // Existing assignments must be cleared while their old strings still exist.
+    // The assignment-integrity trigger allows NULL and prevents a panel from
+    // pointing at a string that has not been persisted yet.
+    const { error: clearAssignmentsError } = await db.from("panel_placements")
+      .update({ string_number: null })
+      .eq("panel_layout_id", layout.id);
+    if (clearAssignmentsError) throw clearAssignmentsError;
+
     const { error: deleteStringsError } = await db.from("electrical_strings").delete().eq("design_version_id", version.id);
     if (deleteStringsError) throw deleteStringsError;
 
     let offset = 0;
     const stringRows: any[] = [];
+    const assignments: Array<{ ids: string[]; stringNumber: number }> = [];
     for (let index = 0; index < distribution.length; index += 1) {
       const count = distribution[index];
       const ids = (placements ?? []).slice(offset, offset + count).map((placement: any) => placement.id);
       offset += count;
       const stringNumber = index + 1;
-      const { error: assignmentError } = await db.from("panel_placements").update({ string_number: stringNumber }).in("id", ids).eq("panel_layout_id", layout.id);
-      if (assignmentError) throw assignmentError;
+      assignments.push({ ids, stringNumber });
       stringRows.push({
         design_version_id: version.id,
         inverter_id: inverter.id,
@@ -167,8 +188,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Persist the electrical authority before assigning panel foreign identity.
     const { error: insertStringsError } = await db.from("electrical_strings").insert(stringRows);
     if (insertStringsError) throw insertStringsError;
+
+    for (const assignment of assignments) {
+      const { error: assignmentError } = await db.from("panel_placements")
+        .update({ string_number: assignment.stringNumber })
+        .in("id", assignment.ids)
+        .eq("panel_layout_id", layout.id);
+      if (assignmentError) throw assignmentError;
+    }
 
     const { data: topology, error: topologyError } = await db.rpc("validate_electrical_topology", { p_design_version_id: version.id });
     if (topologyError) throw topologyError;
@@ -186,6 +216,6 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error(error);
-    return out({ error: error instanceof Error ? error.message : String(error) }, 500);
+    return out(errorBody(error), 500);
   }
 });
