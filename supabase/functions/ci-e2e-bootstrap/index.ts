@@ -7,6 +7,7 @@ const ISSUER = "https://token.actions.githubusercontent.com";
 const AUDIENCE = "solar3d-e2e";
 const REPOSITORY = "Dasu4119/solar3D";
 const ACTOR_ID = "248278589";
+const CI_ORG_PREFIX = "__solar3d_ci_a_";
 const JWKS = createRemoteJWKSet(new URL(`${ISSUER}/.well-known/jwks`));
 const out = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,6 +21,10 @@ function env(name: string) {
 function must(result: any, label: string) {
   if (result?.error || result?.data == null) throw new Error(`${label}: ${result?.error?.message ?? "no data"}`);
   return result.data;
+}
+
+function assertNoError(result: { error?: { message?: string } | null }, label: string) {
+  if (result.error) throw new Error(`${label}: ${result.error.message ?? "database operation failed"}`);
 }
 
 async function verifyGitHubOidc(req: Request) {
@@ -46,27 +51,104 @@ async function findUserByEmail(service: SupabaseClient, email: string) {
 }
 
 async function deleteUserByEmail(service: SupabaseClient, email: string) {
-  try {
-    const user = await findUserByEmail(service, email);
-    if (user) await service.auth.admin.deleteUser(user.id);
-  } catch {
-    // Best-effort cleanup only. A later CI run can safely reuse its own deterministic email.
+  const user = await findUserByEmail(service, email);
+  if (!user) return;
+  const { error } = await service.auth.admin.deleteUser(user.id);
+  if (error && !/not found/i.test(error.message ?? "")) throw new Error(`delete Auth user ${email}: ${error.message}`);
+}
+
+async function deleteUserById(service: SupabaseClient, userId: string) {
+  const { error } = await service.auth.admin.deleteUser(userId);
+  if (error && !/not found/i.test(error.message ?? "")) throw new Error(`delete Auth user ${userId}: ${error.message}`);
+}
+
+async function cleanupOrganizationData(service: SupabaseClient, organizationId: string) {
+  const { data: organization, error: organizationError } = await service
+    .from("organizations")
+    .select("id,name,slug")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (organizationError) throw new Error(`load CI organization: ${organizationError.message}`);
+  if (!organization) return;
+  if (!String(organization.slug ?? "").startsWith(CI_ORG_PREFIX) || !String(organization.name ?? "").startsWith("Solar3D CI Org A ")) {
+    throw new Error(`Refusing to clean non-CI organization ${organizationId}`);
   }
+
+  const { data: projects, error: projectsError } = await service.from("projects").select("id").eq("organization_id", organizationId);
+  if (projectsError) throw new Error(`load CI projects: ${projectsError.message}`);
+  const projectIds = (projects ?? []).map((row: any) => row.id);
+
+  let designIds: string[] = [];
+  if (projectIds.length) {
+    const { data: designs, error } = await service.from("designs").select("id").in("project_id", projectIds);
+    if (error) throw new Error(`load CI designs: ${error.message}`);
+    designIds = (designs ?? []).map((row: any) => row.id);
+  }
+
+  let designVersionIds: string[] = [];
+  if (designIds.length) {
+    const { data: versions, error } = await service.from("design_versions").select("id").in("design_id", designIds);
+    if (error) throw new Error(`load CI design versions: ${error.message}`);
+    designVersionIds = (versions ?? []).map((row: any) => row.id);
+  }
+
+  if (designVersionIds.length) {
+    assertNoError(await service.from("proposal_runs").delete().in("design_version_id", designVersionIds), "delete CI proposal runs");
+    assertNoError(await service.from("bom_runs").delete().in("design_version_id", designVersionIds), "delete CI BOM runs");
+    assertNoError(await service.from("engineering_results").delete().in("design_version_id", designVersionIds), "delete CI engineering results");
+    assertNoError(await service.from("financial_runs").delete().in("design_version_id", designVersionIds), "delete CI financial runs");
+    assertNoError(await service.from("simulation_runs").delete().in("design_version_id", designVersionIds), "delete CI simulation runs");
+  }
+
+  assertNoError(await service.from("organizations").delete().eq("id", organizationId), "delete CI organization");
+  const { data: remaining, error: verifyError } = await service.from("organizations").select("id").eq("id", organizationId).maybeSingle();
+  if (verifyError) throw new Error(`verify CI organization cleanup: ${verifyError.message}`);
+  if (remaining) throw new Error(`CI organization ${organizationId} remained after cleanup`);
 }
 
 async function cleanupRun(service: SupabaseClient, run: any, orgBId: string) {
   if (!run) return;
-  await service.from("organization_members").delete().eq("organization_id", orgBId).eq("user_id", run.user_b_id);
-  await service.from("organizations").delete().eq("id", run.organization_a_id);
-  await service.from("ci_e2e_runs").delete().eq("fixture_id", run.fixture_id);
-  await service.auth.admin.deleteUser(run.user_a_id).catch(() => undefined);
-  await service.auth.admin.deleteUser(run.user_b_id).catch(() => undefined);
+  assertNoError(
+    await service.from("organization_members").delete().eq("organization_id", orgBId).eq("user_id", run.user_b_id),
+    "remove Org B CI membership",
+  );
+  await cleanupOrganizationData(service, run.organization_a_id);
+  await deleteUserById(service, run.user_a_id);
+  await deleteUserById(service, run.user_b_id);
 }
 
 async function cleanupStale(service: SupabaseClient, orgBId: string) {
   const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-  const { data } = await service.from("ci_e2e_runs").select("*").lt("created_at", cutoff);
-  for (const run of data ?? []) await cleanupRun(service, run, orgBId);
+  const { data: runs, error: runsError } = await service.from("ci_e2e_runs").select("*").lt("created_at", cutoff);
+  if (runsError) throw new Error(`load stale CI runs: ${runsError.message}`);
+  for (const run of runs ?? []) await cleanupRun(service, run, orgBId);
+
+  // Recover fixtures from older cleanup implementations that deleted the run
+  // registry row before verifying that immutable commercial rows were removed.
+  const { data: orphanOrganizations, error: orphanError } = await service
+    .from("organizations")
+    .select("id,slug,created_at")
+    .like("slug", `${CI_ORG_PREFIX}%`)
+    .lt("created_at", cutoff);
+  if (orphanError) throw new Error(`load orphan CI organizations: ${orphanError.message}`);
+
+  for (const organization of orphanOrganizations ?? []) {
+    const slug = String(organization.slug ?? "");
+    const compactFixtureId = slug.startsWith(CI_ORG_PREFIX) && slug.endsWith("__")
+      ? slug.slice(CI_ORG_PREFIX.length, -2)
+      : "";
+    const userA = compactFixtureId ? await findUserByEmail(service, `solar3d-ci-a-${compactFixtureId}@example.com`) : null;
+    const userB = compactFixtureId ? await findUserByEmail(service, `solar3d-ci-b-${compactFixtureId}@example.com`) : null;
+    if (userB) {
+      assertNoError(
+        await service.from("organization_members").delete().eq("organization_id", orgBId).eq("user_id", userB.id),
+        "remove orphan Org B CI membership",
+      );
+    }
+    await cleanupOrganizationData(service, organization.id);
+    if (userA) await deleteUserById(service, userA.id);
+    if (userB) await deleteUserById(service, userB.id);
+  }
 }
 
 async function makeUser(service: SupabaseClient, label: "a" | "b", fixtureId: string) {
@@ -97,7 +179,6 @@ async function makeUser(service: SupabaseClient, label: "a" | "b", fixtureId: st
       if (!error && data.user) return { id: data.user.id, email, password };
       lastError = error?.message ?? `create CI user ${label} returned no user`;
 
-      // A gateway timeout can occur after GoTrue committed the user. Recover it by email.
       const recovered = await findUserByEmail(service, email).catch(() => null);
       if (recovered) {
         const { data: normalized, error: normalizeError } = await service.auth.admin.updateUserById(recovered.id, {
@@ -154,9 +235,10 @@ Deno.serve(async (req) => {
       stage = "cleanup_fixture";
       const fixtureId = String(body.fixture_id ?? "");
       if (!fixtureId) return out({ error: "fixture_id is required" }, 400);
-      const { data: run } = await service.from("ci_e2e_runs").select("*").eq("fixture_id", fixtureId).maybeSingle();
+      const { data: run, error: runError } = await service.from("ci_e2e_runs").select("*").eq("fixture_id", fixtureId).maybeSingle();
+      if (runError) throw new Error(`load CI run for cleanup: ${runError.message}`);
       await cleanupRun(service, run, registry.organization_id);
-      return out({ success: true });
+      return out({ success: true, verified_cleanup: true });
     }
 
     if (body.action !== "bootstrap") return out({ error: "Unknown action" }, 400);
@@ -206,11 +288,16 @@ Deno.serve(async (req) => {
       stage = "complete";
       return out({ success: true, fixture_id: fixtureId, org_a: { user_id: userA.id, email: userA.email, password: userA.password, access_token: tokenA, project_id: projectA.id }, org_b: { user_id: userB.id, email: userB.email, password: userB.password, access_token: tokenB, project_id: registry.project_id }, org_b_resource_ids: { projects: registry.project_id, sites: registry.site_id, designs: registry.design_id, roofs: registry.roof_id, panel_layouts: registry.panel_layout_id, simulation_runs: registry.simulation_run_id, financial_runs: registry.financial_run_id, bom_runs: registry.bom_run_id, proposal_runs: registry.proposal_run_id } });
     } catch (error) {
-      if (orgAId) await service.from("organizations").delete().eq("id", orgAId);
-      if (userB) await service.from("organization_members").delete().eq("organization_id", registry.organization_id).eq("user_id", userB.id);
-      if (userA) await service.auth.admin.deleteUser(userA.id).catch(() => undefined);
+      if (userB) {
+        assertNoError(
+          await service.from("organization_members").delete().eq("organization_id", registry.organization_id).eq("user_id", userB.id),
+          "remove partial Org B CI membership",
+        );
+      }
+      if (orgAId) await cleanupOrganizationData(service, orgAId);
+      if (userA) await deleteUserById(service, userA.id);
       else await deleteUserByEmail(service, emailA);
-      if (userB) await service.auth.admin.deleteUser(userB.id).catch(() => undefined);
+      if (userB) await deleteUserById(service, userB.id);
       else await deleteUserByEmail(service, emailB);
       throw error;
     }
