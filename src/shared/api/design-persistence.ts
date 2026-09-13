@@ -31,6 +31,7 @@ export interface ProjectApiResponse {
   success?: boolean;
   error?: string;
   active_version?: { id?: string; metrics?: Record<string, unknown> } | null;
+  draft_version?: { id?: string; metrics?: Record<string, unknown> } | null;
   roofs?: Array<{ id?: string; geometry?: Point[] | PersistedRoofGeometry; area_m2?: number | null }>;
   panel_layouts?: Array<{ id?: string; module_id?: string | null }>;
   panel_placements?: Array<{
@@ -108,11 +109,12 @@ export class ApiDesignPersistence implements DesignPersistence {
       metrics: snapshot.metrics ?? { panel_count: snapshot.panelPlacements.length },
     }) as ProjectApiResponse;
 
-    if (!response.success || !response.design_version?.id) {
+    const persistedVersion = response.design_version ?? response.draft_version;
+    if (!response.success || !persistedVersion?.id) {
       throw new Error(response.error ?? "Unable to persist design");
     }
 
-    return { ...snapshot, versionId: response.design_version.id };
+    return { ...snapshot, versionId: persistedVersion.id };
   }
 }
 

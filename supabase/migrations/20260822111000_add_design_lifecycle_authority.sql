@@ -55,6 +55,9 @@ BEGIN
 END;
 $$;
 
+-- Trigger-only SECURITY DEFINER functions must not be exposed as RPCs.
+REVOKE ALL ON FUNCTION public.validate_design_draft_pointer() FROM PUBLIC, anon, authenticated;
+
 DROP TRIGGER IF EXISTS trg_design_draft_pointer ON public.designs;
 CREATE TRIGGER trg_design_draft_pointer
 BEFORE INSERT OR UPDATE OF draft_version_id ON public.designs
@@ -80,6 +83,9 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- Trigger-only SECURITY DEFINER functions must not be exposed as RPCs.
+REVOKE ALL ON FUNCTION public.validate_design_active_layout() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS trg_design_version_active_layout ON public.design_versions;
 CREATE TRIGGER trg_design_version_active_layout

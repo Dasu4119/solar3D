@@ -128,7 +128,7 @@ export function validateCanonicalGeometry(input: unknown): GeometryValidationRes
         }
       }
 
-      const roofEdgeDistance = minDistanceToPolygon(panel.center, roofPoints);
+      const roofEdgeDistance = Math.min(...corners.map((corner) => minDistanceToPolygon(corner, roofPoints)));
       if (roofEdgeDistance < panel.setbackM) {
         issues.push({ code: 'PANEL_SETBACK_VIOLATION', message: `Panel requires at least ${panel.setbackM} m roof-edge setback.`, roofId: roof.id, panelId: panel.id });
       }

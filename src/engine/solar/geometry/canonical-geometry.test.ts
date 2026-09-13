@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { validateCanonicalGeometry } from './canonical-geometry';
+import { validateCanonicalGeometry, type CanonicalGeometry } from './canonical-geometry';
 
-const baseGeometry = {
-  schemaVersion: 1 as const,
+const baseGeometry: CanonicalGeometry = {
+  schemaVersion: 1,
   roofs: [{
     id: 'roof-1',
     polygon: { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }] },
@@ -29,10 +29,11 @@ describe('validateCanonicalGeometry', () => {
 
   it('rejects insufficient roof-edge setback', () => {
     const geometry = structuredClone(baseGeometry);
-    geometry.roofs[0].panels[0].center.x = 0.7;
+    geometry.roofs[0].panels[0].center.x = 1.2;
     const result = validateCanonicalGeometry(geometry);
     expect(result.valid).toBe(false);
     expect(result.issues.some((issue) => issue.code === 'PANEL_SETBACK_VIOLATION')).toBe(true);
+    expect(result.issues.some((issue) => issue.code === 'PANEL_OUTSIDE_ROOF')).toBe(false);
   });
 
   it('rejects a panel inside an obstacle keepout zone', () => {

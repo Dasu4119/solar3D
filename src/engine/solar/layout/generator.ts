@@ -62,16 +62,13 @@ function generateForRegion(
             { x: x - width / 2, y: y + length / 2 },
           ];
           const footprint = panelFootprint(placement.center, width, length, rotation);
-          // Obstacle classification must happen independently of roof-validity.
-          // A candidate can be invalid because it intersects an obstacle, and the
-          // caller needs that reason preserved for explainability and acceptance tests.
           const blocker = findBlockingObstacle(footprint, constraints.obstacles);
           const canonicalValid = canonicalRegion ? isPolygonUsable(corners, canonicalRegion) : false;
           const insideRegion = canonicalRegion
             ? canonicalValid
             : regionAllowsPanel(placement.center, width + edge * 2, length + edge * 2, region);
           const result = insideRegion
-            ? validatePanelPlacement(region.outer, placement, panel, { northM: edge, eastM: edge, southM: edge, westM: edge }, existingPlacements)
+            ? validatePanelPlacement(region.outer, placement, panel, { northM: edge, eastM: edge, southM: edge, westM: edge })
             : { valid: false, reasons: ["Panel footprint violates canonical roof constraints"] };
           const valid = result.valid && !blocker;
           candidates.push({
@@ -98,6 +95,7 @@ export function generateLayoutCandidates(
   roofPlanes?: RoofPlane[],
   usableRoofRegions?: UsableRoofRegion[],
 ): LayoutCandidate[] {
+  void existingPlacements;
   const canonical = usableRoofRegions?.length ? usableRoofRegions : undefined;
   const regions = canonical
     ? canonical.map((region, index) => ({
