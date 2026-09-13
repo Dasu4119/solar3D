@@ -8,6 +8,19 @@ const headers = {
   "Content-Type": "application/json",
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
+const errorBody = (error: unknown) => {
+  if (error instanceof Error) return { error: error.message };
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    return {
+      error: String(value.message ?? value.error ?? "Database operation failed"),
+      code: value.code ?? null,
+      details: value.details ?? null,
+      hint: value.hint ?? null,
+    };
+  }
+  return { error: String(error) };
+};
 const ENGINE_NAME = "solar3d-engineering";
 const ENGINE_VERSION = "2026.09.rc.1";
 
@@ -146,6 +159,6 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error(error);
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    return json(errorBody(error), 500);
   }
 });
