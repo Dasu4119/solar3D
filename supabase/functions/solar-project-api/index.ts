@@ -9,6 +9,19 @@ const cors = {
 };
 
 const out = (x: unknown, s = 200) => new Response(JSON.stringify(x), { status: s, headers: cors });
+const errorBody = (error: unknown) => {
+  if (error instanceof Error) return { error: error.message };
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    return {
+      error: String(value.message ?? value.error ?? "Database operation failed"),
+      code: value.code ?? null,
+      details: value.details ?? null,
+      hint: value.hint ?? null,
+    };
+  }
+  return { error: String(error) };
+};
 
 async function requireProjectAccess(db: any, userId: string, projectId: string) {
   const { data: project, error: pe } = await db.from("projects").select("*").eq("id", projectId).single();
@@ -206,7 +219,7 @@ Deno.serve(async (req) => {
       if (el) throw el;
       if (existingLayouts?.length) {
         layout = existingLayouts[0];
-        const { error: lu } = await db.from("panel_layouts").update({
+        const { data: updatedLayout, error: lu } = await db.from("panel_layouts").update({
           roof_id: roofRow?.id ?? b.roof_id ?? layout.roof_id,
           module_id: b.module_id ?? layout.module_id,
           orientation_degrees: b.orientation_degrees ?? layout.orientation_degrees,
@@ -222,8 +235,9 @@ Deno.serve(async (req) => {
           panel_count: placements.length,
           dc_capacity_kw: Number(b.dc_capacity_kw ?? 0),
           optimization_score: b.optimization_score ?? null,
-        }).eq("id", layout.id);
+        }).eq("id", layout.id).select().single();
         if (lu) throw lu;
+        layout = updatedLayout;
         const { error: pd } = await db.from("panel_placements").delete().eq("panel_layout_id", layout.id);
         if (pd) throw pd;
       } else if (placements.length || b.create_empty_layout) {
@@ -250,7 +264,18 @@ Deno.serve(async (req) => {
       }
 
       if (layout && placements.length) {
-        const rows = placements.map((p: any, i: number) => ({ panel_layout_id: layout.id, panel_index: i + 1, x: Number(p.center?.x ?? p.x ?? 0), y: Number(p.center?.y ?? p.y ?? 0), z: Number(p.center?.z ?? p.z ?? 0), rotation_degrees: Number(p.rotation ?? p.rotation_degrees ?? 0), tilt_degrees: Number(p.tilt_degrees ?? 0), row_number: p.row_number ?? null, column_number: p.column_number ?? null, string_number: p.string_number ?? null, module_id: p.module_id ?? b.module_id ?? layout.module_id, roof_id: p.roof_id ?? layout.roof_id }));
+        const rows = placements.map((p: any, i: number) => ({
+          panel_layout_id: layout.id,
+          panel_index: i + 1,
+          x: Number(p.center?.x ?? p.x ?? 0),
+          y: Number(p.center?.y ?? p.y ?? 0),
+          z: Number(p.center?.z ?? p.z ?? 0),
+          rotation_degrees: Number(p.rotation ?? p.rotation_degrees ?? 0),
+          tilt_degrees: Number(p.tilt_degrees ?? 0),
+          row_number: p.row_number ?? null,
+          column_number: p.column_number ?? null,
+          string_number: p.string_number ?? null,
+        }));
         const { error: pe } = await db.from("panel_placements").insert(rows);
         if (pe) throw pe;
       }
@@ -260,9 +285,11 @@ Deno.serve(async (req) => {
         if (va) throw va;
       }
 
-      const { data: updated, error: ue2 } = await db.from("designs").update({ draft_version_id: version.id, updated_at: new Date().toISOString() }).eq("id", b.design_id).select().single();
+      const { data: refreshedVersion, error: rv } = await db.from("design_versions").select("*").eq("id", version.id).single();
+      if (rv) throw rv;
+      const { data: updated, error: ue2 } = await db.from("designs").update({ draft_version_id: refreshedVersion.id, updated_at: new Date().toISOString() }).eq("id", b.design_id).select().single();
       if (ue2) throw ue2;
-      return out({ success: true, design: updated, draft_version: version, active_version_id: updated.active_version_id ?? null, roof: roofRow, panel_layout: layout });
+      return out({ success: true, design: updated, design_version: refreshedVersion, draft_version: refreshedVersion, active_version_id: updated.active_version_id ?? null, roof: roofRow, panel_layout: layout });
     }
 
     if (b.action === "create_project") {
@@ -280,6 +307,6 @@ Deno.serve(async (req) => {
     return out({ error: "Unknown action" }, 400);
   } catch (e) {
     console.error(e);
-    return out({ error: e instanceof Error ? e.message : String(e) }, 500);
+    return out(errorBody(e), 500);
   }
 });
