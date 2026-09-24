@@ -34,4 +34,42 @@ describe("mapDesignContext", () => {
   it("fails closed when project geometry is missing", () => {
     expect(() => mapDesignContext({ success: true, design: { id: "design-1" }, roofs: [], module: { id: "module-1" } })).toThrow(/roof geometry/i);
   });
+
+  it("uses the roof selected by the layout instead of array position", () => {
+    const context = mapDesignContext({
+      success: true,
+      design: { id: "design-1", active_version_id: "version-1" },
+      active_version: { id: "version-1" },
+      roofs: [
+        { id: "roof-a", area_m2: 20, geometry: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }] },
+        { id: "roof-b", area_m2: 35, geometry: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }] },
+      ],
+      layout: { roof_id: "roof-b", module_id: "module-1" },
+      module: { id: "module-1", manufacturer: "Solar3D", model: "400W", widthM: 1, lengthM: 2, powerWatts: 400, efficiency: 0.2 },
+    });
+
+    expect(context.roofId).toBe("roof-b");
+    expect(context.roofAreaM2).toBe(35);
+    expect(context.roof).toEqual([{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }]);
+  });
+
+  it("preserves directional layout setbacks over the legacy uniform value and defaults", () => {
+    const context = mapDesignContext({
+      success: true,
+      design: { id: "design-1" },
+      roofs: [{ id: "roof-a", area_m2: 20, geometry: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }] }],
+      layout: {
+        roof_id: "roof-a",
+        module_id: "module-1",
+        setback_m: 1,
+        setback_north_m: 0.2,
+        setback_east_m: 0.4,
+        setback_south_m: 0.6,
+        setback_west_m: 0.8,
+      },
+      module: { id: "module-1", manufacturer: "Solar3D", model: "400W", widthM: 1, lengthM: 2, powerWatts: 400, efficiency: 0.2 },
+    });
+
+    expect(context.setback).toEqual({ northM: 0.2, eastM: 0.4, southM: 0.6, westM: 0.8 });
+  });
 });

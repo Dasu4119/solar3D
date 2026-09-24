@@ -6,10 +6,6 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
-    exclude: [
-      ...configDefaults.exclude,
-      "e2e/**",
-      "features/design/production-dashboard.integration.test.ts",
-    ],
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });
