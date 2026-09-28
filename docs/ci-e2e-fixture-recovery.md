@@ -33,14 +33,19 @@ green E2E run on `main` was 2026-09-13.
    (organization, project, site, design, version, roof, layout and one row per
    commercial run table) required by `ci-e2e-bootstrap`.
 
-3. Deploy all edge functions:
+3. Deploy all edge functions (the CLI deploys one function per call):
 
    ```bash
-   npx supabase functions deploy \
-     ci-e2e-bootstrap ci-e2e-cleanup solar-project-api design-finalization \
-     solar-engineering solar-energy-simulation solar-financials \
-     commercial-output commercial-readiness
+   for fn in ci-e2e-bootstrap ci-e2e-cleanup solar-project-api design-finalization \
+             solar-engineering solar-energy-simulation solar-financials \
+             commercial-output commercial-readiness; do
+     npx supabase functions deploy "$fn" --project-ref <NEW_PROJECT_REF>
+   done
    ```
+
+   The deploy and `db push` commands authenticate with `SUPABASE_ACCESS_TOKEN`
+   (Account → Access Tokens in the Supabase dashboard). Provide it via the
+   environment; never commit it.
 
 4. In the new project set the function secret used for OIDC verification and
    sign-in retries: none beyond the defaults (`SUPABASE_URL`,
@@ -48,11 +53,22 @@ green E2E run on `main` was 2026-09-13.
    The bootstrap function verifies GitHub OIDC against
    `REPOSITORY = Dasu4119/solar3D`, `ACTOR_ID = 248278589`, audience
    `solar3d-e2e` — no per-project configuration is needed.
-5. Copy the new project URL and **anon (publishable) key**.
+5. Copy the new project URL and **anon (publishable) key**
+   (`npx supabase projects api-keys --project-ref <NEW_PROJECT_REF>` or
+   dashboard → Settings → API).
 6. Provide them as repository secrets `E2E_SUPABASE_URL` /
-   `E2E_SUPABASE_ANON_KEY` (preferred — the workflow now reads these secrets
-   first), or edit the `env:` block in `.github/workflows/e2e.yml` directly.
+   `E2E_SUPABASE_ANON_KEY` (preferred — the workflow reads these secrets
+   first), or update the fallback values in the `env:` block of
+   `.github/workflows/e2e.yml`. Both values are publishable by design; only
+   the service-role key and access token are secret.
 7. Re-run the e2e workflow.
+
+### Free-tier note
+
+Free-tier Supabase projects pause after ~1 week of inactivity. A paused
+project still resolves DNS, so CI fails differently (connection refused at the
+bootstrap step, not NXDOMAIN). Restore the fixture from the dashboard when
+that happens, or schedule periodic activity for the project.
 
 ## Why the workflow reads secrets first
 
