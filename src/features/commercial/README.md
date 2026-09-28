@@ -1,0 +1,3 @@
+# Commercial readiness domain
+
+Commercial readiness is sourced from the authenticated `commercial-readiness` Supabase Edge Function. UI components must not infer engineering, simulation, financial, BOM, or proposal readiness from local editor state.
