@@ -24,6 +24,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
+# supabase CLI scratch state
+/supabase/.temp/
+
 # testing
 /coverage
 /playwright-report
