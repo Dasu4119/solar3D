@@ -51,8 +51,10 @@ permissions:
 env:
   E2E_BASE_URL: http://127.0.0.1:3000
   E2E_STORAGE_STATE: playwright/.auth/solar3d-ci.json
-  E2E_SUPABASE_URL: https://dprsjuqcmfiroilrpvkw.supabase.co
-  E2E_SUPABASE_ANON_KEY: sb_publishable_hc9RL4clsz0T7cVykJKjZw_ZXYh6sYG
+  # Fixture project can be rotated via repository secrets without a code change.
+  # Fallbacks keep the original CI fixture values; see docs/ci-e2e-fixture-recovery.md.
+  E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL || 'https://dprsjuqcmfiroilrpvkw.supabase.co' }}
+  E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY || 'sb_publishable_hc9RL4clsz0T7cVykJKjZw_ZXYh6sYG' }}
 
 jobs:
   e2e:
