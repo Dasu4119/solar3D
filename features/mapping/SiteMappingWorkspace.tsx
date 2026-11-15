@@ -2,6 +2,7 @@
 
 import { Canvas } from "@react-three/fiber";
 import { Grid, OrbitControls } from "@react-three/drei";
+import { DoubleSide, Shape, ShapeGeometry } from "three";
 import { useEffect, useMemo, useState } from "react";
 import { createDesignPersistence } from "@/shared/api/design-persistence";
 import { invokeFunction } from "@/shared/api/client";
@@ -10,11 +11,7 @@ import { useDesignEditorStore } from "@/features/design/editor-store";
 
 type XY = { x: number; y: number };
 type Panel = { id: string; x: number; y: number; rotation: number };
-type SiteContext = {
-  latitude: string;
-  longitude: string;
-  altitude: string;
-};
+type SiteContext = { latitude: string; longitude: string; altitude: string };
 
 function RoofModel({ points, panels, moduleSize }: {
   points: XY[];
@@ -23,7 +20,6 @@ function RoofModel({ points, panels, moduleSize }: {
 }) {
   const geometry = useMemo(() => {
     if (points.length < 3) return null;
-    const { Shape, ShapeGeometry } = require("three") as typeof import("three");
     const shape = new Shape();
     shape.moveTo(points[0].x, points[0].y);
     points.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
@@ -35,7 +31,7 @@ function RoofModel({ points, panels, moduleSize }: {
   return (
     <group>
       <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <meshStandardMaterial color="#64748b" roughness={0.82} side={2} />
+        <meshStandardMaterial color="#64748b" roughness={0.82} side={DoubleSide} />
       </mesh>
       {panels.map((panel) => {
         const width = panel.rotation % 180 === 0 ? moduleSize.widthM : moduleSize.lengthM;
@@ -47,10 +43,6 @@ function RoofModel({ points, panels, moduleSize }: {
           </mesh>
         );
       })}
-      <mesh position={[0, -0.13, 0]} receiveShadow>
-        <boxGeometry args={[Math.max(1, ...points.map((p) => p.x)) + 2, 0.2, Math.max(1, ...points.map((p) => p.y)) + 2]} />
-        <meshStandardMaterial color="#cbd5e1" roughness={1} />
-      </mesh>
     </group>
   );
 }
@@ -104,21 +96,21 @@ export function SiteMappingWorkspace({ projectId }: { projectId: string }) {
   const roof = roofs[0]?.points ?? [];
   const updateSite = (key: keyof SiteContext, value: string) => setSite((current) => ({ ...current, [key]: value }));
 
-  async function calculateLocalCoordinates() {
+  async function validateSiteCoordinates() {
     setError(null);
     setEnu(null);
     const latitude = Number(site.latitude);
     const longitude = Number(site.longitude);
     const altitude = Number(site.altitude || "0");
-    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+    if (!site.latitude.trim() || !site.longitude.trim() ||
+        !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
         !Number.isFinite(altitude)) {
       setError("Enter a valid latitude, longitude and altitude.");
       return;
     }
-    const api = "/api/geography/georeference";
     try {
-      const response = await fetch(api, {
+      const response = await fetch("/api/geography/georeference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,10 +122,12 @@ export function SiteMappingWorkspace({ projectId }: { projectId: string }) {
       const body = await response.json();
       setEnu(body.point);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Coordinate conversion failed");
+      setError(cause instanceof Error ? cause.message : "Coordinate validation failed");
     }
   }
 
+  const maxX = Math.max(1, ...roof.map((point) => Math.abs(point.x)));
+  const maxY = Math.max(1, ...roof.map((point) => Math.abs(point.y)));
   return (
     <main className="mapping-shell">
       <header className="mapping-header">
@@ -143,21 +137,21 @@ export function SiteMappingWorkspace({ projectId }: { projectId: string }) {
       <div className="mapping-layout">
         <aside className="mapping-panel">
           <h2>Site coordinates</h2>
-          <p>Set the verified project origin. Coordinates are not inferred from an address.</p>
+          <p>Enter the site’s verified WGS84 coordinates. This action validates the coordinate frame only; it does not yet save a site location to the project.</p>
           <label>Latitude (WGS84)<input inputMode="decimal" value={site.latitude} onChange={(event) => updateSite("latitude", event.target.value)} placeholder="e.g. 16.3067" /></label>
           <label>Longitude (WGS84)<input inputMode="decimal" value={site.longitude} onChange={(event) => updateSite("longitude", event.target.value)} placeholder="e.g. 80.4365" /></label>
           <label>Ellipsoidal altitude (m)<input inputMode="decimal" value={site.altitude} onChange={(event) => updateSite("altitude", event.target.value)} /></label>
-          <button onClick={calculateLocalCoordinates}>Validate site origin</button>
-          {enu && <div className="mapping-result"><strong>ENU origin check</strong><span>E {enu.east_m.toFixed(4)} m</span><span>N {enu.north_m.toFixed(4)} m</span><span>U {enu.up_m.toFixed(4)} m</span></div>}
-          <div className="mapping-meta"><strong>Coordinate frame</strong><span>WGS84 → local ENU</span><span>X East · Y North · Z Up</span></div>
-          <div className="mapping-meta"><strong>Project model</strong><span>{roof.length} roof vertices</span><span>{panels.length} solar panels</span><span>{moduleSize.widthM.toFixed(3)} × {moduleSize.lengthM.toFixed(3)} m module</span></div>
+          <button onClick={validateSiteCoordinates}>Validate coordinates</button>
+          {enu && <div className="mapping-result"><strong>Local ENU origin</strong><span>E {enu.east_m.toFixed(4)} m</span><span>N {enu.north_m.toFixed(4)} m</span><span>U {enu.up_m.toFixed(4)} m</span></div>}
+          <div className="mapping-meta"><strong>Coordinate frame</strong><span>WGS84 → local ENU metres</span><span>X East · Y North · Z Up</span></div>
+          <div className="mapping-meta"><strong>Loaded engineering model</strong><span>{roof.length} roof vertices</span><span>{panels.length} solar panels</span><span>{moduleSize.widthM.toFixed(3)} × {moduleSize.lengthM.toFixed(3)} m module</span></div>
           <p className="mapping-status">{status}</p>
           {error && <p className="mapping-error" role="alert">{error}</p>}
         </aside>
         <section className="mapping-view" aria-label="Interactive 3D roof model">
           <div className="mapping-view-label"><strong>Engineering 3D view</strong><span>Drag to orbit · Scroll to zoom · Right-drag to pan</span></div>
           {roof.length >= 3 ? (
-            <Canvas shadows camera={{ position: [Math.max(8, ...roof.map((p) => p.x * 1.5)), 12, Math.max(8, ...roof.map((p) => p.y * 1.5))], fov: 42 }}>
+            <Canvas shadows camera={{ position: [Math.max(8, maxX * 1.5), 12, Math.max(8, maxY * 1.5)], fov: 42 }}>
               <color attach="background" args={["#e8eef4"]} />
               <ambientLight intensity={1.1} />
               <directionalLight position={[8, 15, 7]} intensity={2.2} castShadow />
